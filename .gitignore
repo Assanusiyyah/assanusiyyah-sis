@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Build output
+build/
+
+# Environment variables - NEVER commit real keys
+.env
+.env.local
+.env.production
+
+# Cache
+.cache/
