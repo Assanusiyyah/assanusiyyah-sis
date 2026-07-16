@@ -862,6 +862,30 @@ function WhatsAppButton({phone,message,label="WhatsApp"}){
   return(<button style={{...S.btn("success"),fontSize:11,padding:"5px 10px"}} onClick={handle}><span style={S.row}><Icon name="whatsapp" size={12}/>{label}</span></button>);
 }
 
+// Shared form-field renderer for modal edit forms. Defined once at module
+// scope (not inline inside a form component's own function body) — a
+// component defined inline gets a brand-new function identity every render,
+// which makes React treat it as a different component type and remount the
+// underlying <input> DOM node on every keystroke, silently dropping focus
+// after the first character typed. This is what "value, onChange, form,
+// setForm" as explicit props (instead of closures) fixes.
+function FormField({label,field,type="text",opts,required,sub,form,setForm}){
+  const value = sub ? form[sub][field] : form[field];
+  function onChange(e){
+    const v = e.target.value;
+    if(sub) setForm(p=>({...p,[sub]:{...p[sub],[field]:v}}));
+    else setForm(p=>({...p,[field]:v}));
+  }
+  return (
+    <div style={S.formGroup}>
+      <label style={S.label}>{label}{required&&<span style={{color:C.danger}}> *</span>}</label>
+      {opts?<select style={{...S.select,width:"100%"}} value={value} onChange={onChange}>{opts.map(o=><option key={o}>{o}</option>)}</select>
+      :type==="textarea"?<textarea style={{...S.textarea,minHeight:sub?60:50}} value={value} onChange={onChange}/>
+      :<input style={S.input} type={type} value={value} onChange={onChange}/>}
+    </div>
+  );
+}
+
 // Print / Download PDF / Share toolbar for an already-built printable HTML
 // document (receipts, report cards, ID cards, admission letters, etc.).
 // getHtml is a function (not a string) so it's always built fresh from
@@ -1273,14 +1297,6 @@ function StudentFormModal({open,student,onSave,onClose}){
     const reader=new FileReader();reader.onload=ev=>setForm(p=>({...p,passport:ev.target.result}));reader.readAsDataURL(file);
   }
 
-  const FF=({label,field,type="text",opts,required})=>(
-    <div style={S.formGroup}>
-      <label style={S.label}>{label}{required&&<span style={{color:C.danger}}> *</span>}</label>
-      {opts?<select style={{...S.select,width:"100%"}} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}>{opts.map(o=><option key={o}>{o}</option>)}</select>
-      :<input style={S.input} type={type} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}/>}
-    </div>
-  );
-
   function handleSave(){
     if(!form.surname||!form.firstname)return alert("Surname and First Name required.");
     onSave(form);
@@ -1298,15 +1314,15 @@ function StudentFormModal({open,student,onSave,onClose}){
           <input ref={passRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePassport}/>
         </div>
         <div style={{flex:1}}>
-          <div style={S.grid2}><FF label="Surname" field="surname" required/><FF label="First Name" field="firstname" required/></div>
-          <div style={S.grid2}><FF label="Middle Name" field="middlename"/><div style={{...S.formGroup,background:"#FEF3C7",borderRadius:8,padding:"6px 8px",border:"1px solid #F59E0B"}}><label style={{...S.label,color:"#92400E",fontWeight:800}}>📅 Date of Birth *</label><input type="date" style={{...S.input,borderColor:"#F59E0B"}} value={form.dob} onChange={function(e){setForm(function(p){return{...p,dob:e.target.value};});}}/><div style={{fontSize:9,color:"#92400E",marginTop:2}}>Required for age calculation, analytics &amp; clinic</div></div></div>
+          <div style={S.grid2}><FormField form={form} setForm={setForm} label="Surname" field="surname" required/><FormField form={form} setForm={setForm} label="First Name" field="firstname" required/></div>
+          <div style={S.grid2}><FormField form={form} setForm={setForm} label="Middle Name" field="middlename"/><div style={{...S.formGroup,background:"#FEF3C7",borderRadius:8,padding:"6px 8px",border:"1px solid #F59E0B"}}><label style={{...S.label,color:"#92400E",fontWeight:800}}>📅 Date of Birth *</label><input type="date" style={{...S.input,borderColor:"#F59E0B"}} value={form.dob} onChange={function(e){setForm(function(p){return{...p,dob:e.target.value};});}}/><div style={{fontSize:9,color:"#92400E",marginTop:2}}>Required for age calculation, analytics &amp; clinic</div></div></div>
         </div>
       </div>
-      <div style={S.grid3}><FF label="Gender" field="gender" opts={["Male","Female"]}/><FF label="Religion" field="religion" opts={["Islam","Christianity","Others"]}/><FF label="Boarding Type" field="boardingType" opts={["Day","Boarder"]}/></div>
-      <div style={S.grid4}><FF label="Blood Group" field="bloodGroup" opts={["A+","A-","B+","B-","AB+","AB-","O+","O-"]}/><FF label="Genotype" field="genotype" opts={["AA","AS","SS","AC","SC"]}/><FF label="Class" field="class" opts={CLASSES}/><FF label="Arm" field="arm" opts={ARMS}/></div>
-      <div style={S.grid3}><FF label="Entry Class" field="entryClass" opts={CLASSES}/><FF label="Entry Session" field="entrySession" opts={SESSIONS}/><FF label="Student Phone" field="phone"/></div>
-      <div style={S.grid2}><FF label="Parent/Guardian Name" field="parentName"/><FF label="Parent Phone" field="parentPhone"/></div>
-      <div style={S.grid2}><FF label="Parent Email" field="parentEmail"/><div style={S.formGroup}><label style={S.label}>Home Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div></div>
+      <div style={S.grid3}><FormField form={form} setForm={setForm} label="Gender" field="gender" opts={["Male","Female"]}/><FormField form={form} setForm={setForm} label="Religion" field="religion" opts={["Islam","Christianity","Others"]}/><FormField form={form} setForm={setForm} label="Boarding Type" field="boardingType" opts={["Day","Boarder"]}/></div>
+      <div style={S.grid4}><FormField form={form} setForm={setForm} label="Blood Group" field="bloodGroup" opts={["A+","A-","B+","B-","AB+","AB-","O+","O-"]}/><FormField form={form} setForm={setForm} label="Genotype" field="genotype" opts={["AA","AS","SS","AC","SC"]}/><FormField form={form} setForm={setForm} label="Class" field="class" opts={CLASSES}/><FormField form={form} setForm={setForm} label="Arm" field="arm" opts={ARMS}/></div>
+      <div style={S.grid3}><FormField form={form} setForm={setForm} label="Entry Class" field="entryClass" opts={CLASSES}/><FormField form={form} setForm={setForm} label="Entry Session" field="entrySession" opts={SESSIONS}/><FormField form={form} setForm={setForm} label="Student Phone" field="phone"/></div>
+      <div style={S.grid2}><FormField form={form} setForm={setForm} label="Parent/Guardian Name" field="parentName"/><FormField form={form} setForm={setForm} label="Parent Phone" field="parentPhone"/></div>
+      <div style={S.grid2}><FormField form={form} setForm={setForm} label="Parent Email" field="parentEmail"/><div style={S.formGroup}><label style={S.label}>Home Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div></div>
       <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={onClose}>Cancel</button><button style={S.btn()} onClick={handleSave}>{student?"Save Changes":"Enrol Student"}</button></div>
     </Modal>
   );
@@ -3034,7 +3050,6 @@ function StaffFormModal({open,staffMember,onSave,onClose}){
 
   function toggleSub(sub){setSelSubs(p=>p.includes(sub)?p.filter(x=>x!==sub):[...p,sub]);}
   function toggleCls(cls){setSelCls(p=>p.includes(cls)?p.filter(x=>x!==cls):[...p,cls]);}
-  const FF=({label,field,type="text",opts})=>(<div style={S.formGroup}><label style={S.label}>{label}</label>{opts?<select style={{...S.select,width:"100%"}} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}>{opts.map(o=><option key={o}>{o}</option>)}</select>:<input style={S.input} type={type} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}/> }</div>);
 
   function handleSave(){
     if(!form.surname||!form.firstname)return alert("Surname and First Name required.");
@@ -3043,11 +3058,11 @@ function StaffFormModal({open,staffMember,onSave,onClose}){
 
   return(
     <Modal open={open} onClose={onClose} title={staffMember?"Edit Staff Record":"Add Staff Member"} wide>
-      <div style={S.grid3}><FF label="Surname *" field="surname"/><FF label="First Name *" field="firstname"/><FF label="Middle Name" field="middlename"/></div>
-      <div style={S.grid3}><FF label="Date of Birth" field="dob" type="date"/><FF label="Gender" field="gender" opts={["Male","Female"]}/><FF label="Phone" field="phone"/></div>
-      <div style={S.grid2}><FF label="Highest Qualification" field="qualification"/><FF label="Role" field="role" opts={["Teacher","Admin","Bursar","Others"]}/></div>
-      <div style={S.grid2}><FF label="Next of Kin" field="nextOfKin"/><FF label="Next of Kin Phone" field="nextOfKinPhone"/></div>
-      <div style={S.formGroup}><FF label="Periods per Week" field="periodsPerWeek" type="number"/></div>
+      <div style={S.grid3}><FormField form={form} setForm={setForm} label="Surname *" field="surname"/><FormField form={form} setForm={setForm} label="First Name *" field="firstname"/><FormField form={form} setForm={setForm} label="Middle Name" field="middlename"/></div>
+      <div style={S.grid3}><FormField form={form} setForm={setForm} label="Date of Birth" field="dob" type="date"/><FormField form={form} setForm={setForm} label="Gender" field="gender" opts={["Male","Female"]}/><FormField form={form} setForm={setForm} label="Phone" field="phone"/></div>
+      <div style={S.grid2}><FormField form={form} setForm={setForm} label="Highest Qualification" field="qualification"/><FormField form={form} setForm={setForm} label="Role" field="role" opts={["Teacher","Admin","Bursar","Others"]}/></div>
+      <div style={S.grid2}><FormField form={form} setForm={setForm} label="Next of Kin" field="nextOfKin"/><FormField form={form} setForm={setForm} label="Next of Kin Phone" field="nextOfKinPhone"/></div>
+      <div style={S.formGroup}><FormField form={form} setForm={setForm} label="Periods per Week" field="periodsPerWeek" type="number"/></div>
       <div style={S.formGroup}><label style={S.label}>Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div>
       <div style={S.formGroup}>
         <label style={S.label}>Subjects Taught</label>
@@ -4540,28 +4555,14 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
     }
   }
 
-  const FF=({label,field,type="text",opts,sub})=>(
-    <div style={S.formGroup}>
-      <label style={S.label}>{label}</label>
-      {opts?<select style={{...S.select,width:"100%"}} value={sub?form[sub][field]:form[field]}
-        onChange={e=>sub?setForm(p=>({...p,[sub]:{...p[sub],[field]:e.target.value}})):setForm(p=>({...p,[field]:e.target.value}))}>
-        {opts.map(o=><option key={o}>{o}</option>)}
-      </select>:type==="textarea"?
-      <textarea style={{...S.textarea,minHeight:sub?60:50}} value={sub?form[sub][field]:form[field]}
-        onChange={e=>sub?setForm(p=>({...p,[sub]:{...p[sub],[field]:e.target.value}})):setForm(p=>({...p,[field]:e.target.value}))}/>:
-      <input style={S.input} type={type} value={sub?form[sub][field]:form[field]}
-        onChange={e=>sub?setForm(p=>({...p,[sub]:{...p[sub],[field]:e.target.value}})):setForm(p=>({...p,[field]:e.target.value}))}/>}
-    </div>
-  );
-
   return(
     <Modal open={open} onClose={onClose} title={lesson?"Edit Lesson Note":"New Lesson Note"} extraWide>
       <div style={{maxHeight:"70vh",overflowY:"auto",paddingRight:8}}>
         <div style={{fontWeight:700,color:C.primary,marginBottom:10,fontSize:12,borderBottom:"2px solid "+C.primary,paddingBottom:6}}>📋 LESSON DETAILS</div>
         <div style={S.grid3}>
-          <FF label="Date *" field="date" type="date"/>
-          <FF label="Class *" field="class" opts={CLASSES}/>
-          <FF label="Arm" field="arm" opts={ARMS}/>
+          <FormField form={form} setForm={setForm} label="Date *" field="date" type="date"/>
+          <FormField form={form} setForm={setForm} label="Class *" field="class" opts={CLASSES}/>
+          <FormField form={form} setForm={setForm} label="Arm" field="arm" opts={ARMS}/>
           <div style={S.formGroup}>
             <label style={S.label}>Teacher *</label>
             <select style={{...S.select,width:"100%"}} value={form.teacherId} onChange={e=>setForm(p=>({...p,teacherId:e.target.value}))}>
@@ -4576,8 +4577,8 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
               {(form.teacherId?staff.find(s=>s.id===form.teacherId)?.subjects||allSubjects:allSubjects).map(s=><option key={s}>{s}</option>)}
             </select>
           </div>
-          <FF label="Period" field="period" type="number"/>
-          <FF label="Time (e.g. 8:00 AM - 9:00 AM)" field="time"/>
+          <FormField form={form} setForm={setForm} label="Period" field="period" type="number"/>
+          <FormField form={form} setForm={setForm} label="Time (e.g. 8:00 AM - 9:00 AM)" field="time"/>
           <div style={S.formGroup}>
             <label style={S.label}>Status</label>
             <select style={{...S.select,width:"100%"}} value={form.status} onChange={e=>setForm(p=>({...p,status:e.target.value}))}>
@@ -4586,8 +4587,8 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
           </div>
         </div>
 
-        <FF label="Topic *" field="topic"/>
-        <FF label="Teacher's Notes / Keywords (optional — guides the auto-generator, e.g. 'focus on photosynthesis stages, include diagram description')" field="keyPoints" type="textarea"/>
+        <FormField form={form} setForm={setForm} label="Topic *" field="topic"/>
+        <FormField form={form} setForm={setForm} label="Teacher's Notes / Keywords (optional — guides the auto-generator, e.g. 'focus on photosynthesis stages, include diagram description')" field="keyPoints" type="textarea"/>
 
         {/* AUTO-GENERATE BUTTON */}
         <div style={{background:"linear-gradient(135deg,#EFF6FF,#F5F3FF)",border:"2px solid "+C.blue,borderRadius:10,padding:16,marginBottom:16,textAlign:"center"}}>
@@ -4601,32 +4602,32 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
         </div>
 
         <div style={{fontWeight:700,color:C.primary,margin:"14px 0 10px",fontSize:12,borderBottom:"2px solid "+C.primary,paddingBottom:6}}>📚 LESSON CONTENT (review / edit)</div>
-        <FF label="Subtopic" field="subtopic"/>
+        <FormField form={form} setForm={setForm} label="Subtopic" field="subtopic"/>
         <div style={S.grid2}>
-          <FF label="Textbook" field="textbook"/>
-          <FF label="Instructional Materials" field="instructionalMaterials"/>
+          <FormField form={form} setForm={setForm} label="Textbook" field="textbook"/>
+          <FormField form={form} setForm={setForm} label="Instructional Materials" field="instructionalMaterials"/>
         </div>
-        <FF label="Previous Knowledge" field="previousKnowledge" type="textarea"/>
-        <FF label="Behavioural Objectives" field="behaviouralObjectives" type="textarea"/>
+        <FormField form={form} setForm={setForm} label="Previous Knowledge" field="previousKnowledge" type="textarea"/>
+        <FormField form={form} setForm={setForm} label="Behavioural Objectives" field="behaviouralObjectives" type="textarea"/>
 
         <div style={{fontWeight:700,color:C.primary,margin:"14px 0 10px",fontSize:12,borderBottom:"2px solid "+C.primary,paddingBottom:6}}>🪜 LESSON STEPS</div>
         <div style={{background:"#F0FDF4",borderLeft:"3px solid "+C.success,borderRadius:"0 6px 6px 0",padding:"10px 12px",marginBottom:10}}>
-          <FF label="Step 1 Title" field="title" sub="stepOne"/>
-          <FF label="Step 1 Content" field="content" type="textarea" sub="stepOne"/>
+          <FormField form={form} setForm={setForm} label="Step 1 Title" field="title" sub="stepOne"/>
+          <FormField form={form} setForm={setForm} label="Step 1 Content" field="content" type="textarea" sub="stepOne"/>
         </div>
         <div style={{background:"#EFF6FF",borderLeft:"3px solid "+C.blue,borderRadius:"0 6px 6px 0",padding:"10px 12px",marginBottom:10}}>
-          <FF label="Step 2 Title" field="title" sub="stepTwo"/>
-          <FF label="Step 2 Content" field="content" type="textarea" sub="stepTwo"/>
+          <FormField form={form} setForm={setForm} label="Step 2 Title" field="title" sub="stepTwo"/>
+          <FormField form={form} setForm={setForm} label="Step 2 Content" field="content" type="textarea" sub="stepTwo"/>
         </div>
         <div style={{background:"#FFF7ED",borderLeft:"3px solid "+C.orange,borderRadius:"0 6px 6px 0",padding:"10px 12px",marginBottom:10}}>
-          <FF label="Step 3 Title" field="title" sub="stepThree"/>
-          <FF label="Step 3 Content" field="content" type="textarea" sub="stepThree"/>
+          <FormField form={form} setForm={setForm} label="Step 3 Title" field="title" sub="stepThree"/>
+          <FormField form={form} setForm={setForm} label="Step 3 Content" field="content" type="textarea" sub="stepThree"/>
         </div>
 
         <div style={{fontWeight:700,color:C.primary,margin:"14px 0 10px",fontSize:12,borderBottom:"2px solid "+C.primary,paddingBottom:6}}>📝 CLOSING</div>
-        <FF label="Revision" field="revision" type="textarea"/>
-        <FF label="Evaluation Questions" field="evaluation" type="textarea"/>
-        <FF label="Assignment" field="assignment" type="textarea"/>
+        <FormField form={form} setForm={setForm} label="Revision" field="revision" type="textarea"/>
+        <FormField form={form} setForm={setForm} label="Evaluation Questions" field="evaluation" type="textarea"/>
+        <FormField form={form} setForm={setForm} label="Assignment" field="assignment" type="textarea"/>
 
         <div style={{fontWeight:700,color:C.primary,margin:"14px 0 10px",fontSize:12,borderBottom:"2px solid "+C.primary,paddingBottom:6}}>🎬 VIDEO RESOURCES</div>
         {(form.videoSearchSuggestions||[]).length>0&&(
