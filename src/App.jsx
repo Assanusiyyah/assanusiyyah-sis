@@ -660,10 +660,10 @@ function DashboardHome({students,results,fees,attendance,staff,settings,currentU
 
   return(<div>
     {/* Welcome banner */}
-    <div style={{background:`linear-gradient(135deg,${C.primaryDark},${C.primaryLight})`,borderRadius:12,padding:"20px 24px",marginBottom:20,...S.row,gap:16}}>
+    <div style={{background:`linear-gradient(135deg,${C.primaryDark},${C.primaryLight})`,borderRadius:12,padding:"20px 24px",marginBottom:20,...S.row,gap:16,flexWrap:"wrap"}}>
       <SchoolLogoImg size={60}/>
-      <div style={{flex:1}}>
-        <div style={{fontSize:18,fontWeight:800,color:C.goldLight}}>{SCHOOL_NAME}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:18,fontWeight:800,color:C.goldLight,overflowWrap:"break-word"}}>{SCHOOL_NAME}</div>
         <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",marginTop:2}}>{SCHOOL_ADDRESS}</div>
         <div style={{fontSize:11,color:C.goldLight,marginTop:4,fontStyle:"italic"}}>{SCHOOL_MOTTO}</div>
       </div>
