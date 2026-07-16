@@ -4682,6 +4682,7 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
   const isAdmin = currentUser.role==="root"||currentUser.role==="Admin";
   const myStaff = staff.find(s=>s.id===currentUser.staffId||
     (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
+  const allSubjects=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
 
   const filtered = lessons.filter(l=>
     (!filterCls||l.class===filterCls) &&
