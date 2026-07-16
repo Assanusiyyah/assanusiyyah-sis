@@ -239,6 +239,20 @@ const SCHOOL_LOGO = "";
 const LogoContext = createContext("");
 function useLogoSrc(){ return useContext(LogoContext); }
 
+// Tracks whether the viewport is phone-width, so the app shell can switch
+// the sidebar from a permanent 240px column to an off-canvas drawer —
+// without this, a fixed-width sidebar plus full desktop content forces
+// horizontal overflow on a phone in portrait mode.
+function useIsMobile(){
+  const [isMobile,setIsMobile]=useState(typeof window!=="undefined"&&window.innerWidth<=768);
+  useEffect(function(){
+    function onResize(){ setIsMobile(window.innerWidth<=768); }
+    window.addEventListener("resize", onResize);
+    return function(){ window.removeEventListener("resize", onResize); };
+  },[]);
+  return isMobile;
+}
+
 // SchoolLogoImg: renders the logo from context, or an "AS" badge if no logo uploaded yet
 function SchoolLogoImg({size=44, style={}, bg="rgba(255,255,255,0.9)", round=false}){
   const logo = useLogoSrc();
@@ -737,7 +751,16 @@ const SEED_SUBMISSIONS = [
 // ─── STYLES ───────────────────────────────────────────────
 const S = {
   app:{display:"flex",height:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif",background:C.ivory,color:C.text,overflow:"hidden"},
-  sidebar:{width:240,background:C.sidebarBg,display:"flex",flexDirection:"column",flexShrink:0,overflowY:"auto"},
+  // On mobile, the sidebar becomes a fixed off-canvas drawer (slides in over
+  // the content) instead of a permanent 240px column — a static-width
+  // sidebar plus full content was forcing horizontal overflow on phones.
+  sidebar:(isMobile,open)=>isMobile?{
+    width:240,background:C.sidebarBg,display:"flex",flexDirection:"column",overflowY:"auto",
+    position:"fixed",top:0,left:0,height:"100vh",zIndex:300,
+    transform:open?"translateX(0)":"translateX(-100%)",transition:"transform 0.25s ease",
+    boxShadow:open?"4px 0 20px rgba(0,0,0,0.3)":"none"
+  }:{width:240,background:C.sidebarBg,display:"flex",flexDirection:"column",flexShrink:0,overflowY:"auto"},
+  sidebarBackdrop:{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:250},
   sidebarLogo:{display:"flex",flexDirection:"column",alignItems:"center",padding:"16px 12px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)"},
   logoImg:{width:64,height:64,objectFit:"contain",borderRadius:4},
   schoolName:{color:C.goldLight,fontSize:10,fontWeight:700,letterSpacing:"0.04em",lineHeight:1.3,marginTop:8,textAlign:"center"},
@@ -745,11 +768,12 @@ const S = {
   navSection:{padding:"8px 0 2px"},
   navLabel:{color:"rgba(255,255,255,0.3)",fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase",padding:"0 14px 4px",fontWeight:600},
   navItem:(a)=>({display:"flex",alignItems:"center",gap:8,padding:"7px 14px",cursor:"pointer",background:a?"rgba(183,134,44,0.18)":"transparent",borderLeft:a?`3px solid ${C.gold}`:"3px solid transparent",color:a?C.goldLight:"rgba(255,255,255,0.6)",fontSize:11,fontWeight:a?600:400,userSelect:"none",transition:"all 0.15s"}),
-  main:{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"},
+  main:{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0},
   topbar:{background:C.white,borderBottom:`1px solid ${C.border}`,padding:"11px 22px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0},
   pageTitle:{fontSize:16,fontWeight:700,color:C.primaryDark},
   sessionBadge:{background:C.primaryDark,color:C.goldLight,padding:"4px 12px",borderRadius:20,fontSize:11,fontWeight:600},
-  content:{flex:1,overflowY:"auto",padding:20},
+  content:(isMobile)=>({flex:1,overflowY:"auto",overflowX:"hidden",padding:isMobile?12:20}),
+  hamburgerBtn:{display:"flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:6,border:"none",background:"transparent",cursor:"pointer",flexShrink:0},
   card:{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:16,marginBottom:14},
   cardTitle:{fontSize:12,fontWeight:700,color:C.primaryDark,marginBottom:11,paddingBottom:8,borderBottom:`1px solid ${C.border}`},
   statsGrid:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:10,marginBottom:16},
@@ -811,6 +835,7 @@ function Icon({name,size=16,color="currentColor"}){
     eye:<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" {...p}/><circle cx="12" cy="12" r="3" {...p}/></>,
     search:<><circle cx="11" cy="11" r="8" {...p}/><line x1="21" y1="21" x2="16.65" y2="16.65" {...p}/></>,
     close:<><line x1="18" y1="6" x2="6" y2="18" {...p}/><line x1="6" y1="6" x2="18" y2="18" {...p}/></>,
+    menu:<><line x1="3" y1="6" x2="21" y2="6" {...p}/><line x1="3" y1="12" x2="21" y2="12" {...p}/><line x1="3" y1="18" x2="21" y2="18" {...p}/></>,
     download:<><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" {...p}/><polyline points="7 10 12 15 17 10" {...p}/><line x1="12" y1="15" x2="12" y2="3" {...p}/></>,
     print:<><polyline points="6 9 6 2 18 2 18 9" {...p}/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" {...p}/><rect x="6" y="14" width="12" height="8" {...p}/></>,
     whatsapp:<><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" {...p}/></>,
@@ -6609,6 +6634,26 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
       {/* ── TAB: STATISTICS ── */}
       {tab==="stats" ? (
         <div>
+          <div style={{marginBottom:14}}>
+            <TableActionBar
+              title="Clinic Statistics"
+              onPrint={function(){
+                var hdr = buildDocHeader(settings,"SCHOOL CLINIC STATISTICS — "+CURRENT_TERM+" "+CURRENT_SESSION);
+                var html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Clinic Statistics</title><style>'+hdr.printStyles+'</style></head><body>'+hdr.headerHtml+
+                  '<table><tr><th>Metric</th><th>Value</th></tr>'+
+                  '<tr><td>Today</td><td>'+todayRecords.length+'</td></tr>'+
+                  '<tr><td>This Term</td><td>'+thisTermVisits+'</td></tr>'+
+                  '<tr><td>In Sick Bay</td><td>'+sickBay.length+'</td></tr>'+
+                  '<tr><td>Total Records</td><td>'+clinic.length+'</td></tr>'+
+                  '<tr><td>Unique Patients</td><td>'+Object.keys(visitMap).length+'</td></tr>'+
+                  '</table>'+hdr.footerHtml+'</body></html>';
+                printHtmlDoc(html);
+              }}
+              columns={["Condition","Visits This Term"]}
+              rows={conditionStats.map(function(e){return [e[0],e[1]];})}
+              filename={"Clinic_Statistics_"+CURRENT_TERM+"_"+CURRENT_SESSION}
+            />
+          </div>
           <div style={S.statsGrid}>
             {[{l:"Today",v:todayRecords.length,bg:"#FEF2F2"},{l:"This Term",v:thisTermVisits,bg:"#FFF7ED"},{l:"In Sick Bay",v:sickBay.length,bg:"#FEF2F2"},{l:"Total Records",v:clinic.length,bg:"#F5F3FB"},{l:"Unique Patients",v:Object.keys(visitMap).length,bg:"#EFF6FF"},{l:"Referred to Hospital",v:clinic.filter(function(r){return r.disposition==="Referred to hospital"&&r.session===CURRENT_SESSION&&r.term===CURRENT_TERM;}).length,bg:"#FEE2E2"}].map(function(s,i){
               return <div key={i} style={S.statCard(s.bg)}><div style={{...S.statNum,fontSize:20}}>{s.v}</div><div style={S.statLabel}>{s.l}</div></div>;
@@ -9900,6 +9945,8 @@ export default function App(){
   const [page,setPage]=useState("dashboard");
   const [dbStatus,setDbStatus]=useState("loading");
   const [parentStudent,setParentStudent]=useState(null); // set when parent logs in
+  const isMobile = useIsMobile();
+  const [sidebarOpen,setSidebarOpen]=useState(false);
 
   // ── Raw state (Supabase feeds into these) ──────────
   const [students,_setStudents]=useState(SEED_STUDENTS);
@@ -10098,6 +10145,7 @@ export default function App(){
   function navigate(pid){
     if(userCanAccess(currentUser,pid)||pid==="dashboard"){setPage(pid);}
     else{alert("You do not have permission to access that page.");setPage("dashboard");}
+    setSidebarOpen(false); // close the mobile drawer after picking a page
   }
 
   // Access-denied screen
@@ -10113,8 +10161,10 @@ export default function App(){
   return(<LogoContext.Provider value={settings.schoolLogo||""}>
   <DBStatusBadge status={dbStatus}/>
   <div style={S.app}>
+    {/* Mobile-only backdrop, closes the drawer when tapped outside it */}
+    {isMobile&&sidebarOpen&&<div style={S.sidebarBackdrop} onClick={()=>setSidebarOpen(false)}/>}
     {/* SIDEBAR */}
-    <aside style={S.sidebar}>
+    <aside style={S.sidebar(isMobile,sidebarOpen)}>
       <div style={S.sidebarLogo}>
         <SchoolLogoImg size={64} bg="rgba(255,255,255,0.1)" round={true}/>
         <div style={S.schoolName}>{SCHOOL_NAME}</div>
@@ -10149,6 +10199,7 @@ export default function App(){
     <main style={S.main}>
       <div style={S.topbar}>
         <div style={{...S.row,gap:8}}>
+          {isMobile&&<button style={S.hamburgerBtn} onClick={()=>setSidebarOpen(true)} aria-label="Open menu"><Icon name="menu" size={20} color={C.primaryDark}/></button>}
           {page!=="dashboard"&&<button style={{...S.btn("ghost"),fontSize:11,padding:"4px 8px",color:C.textMuted}} onClick={()=>setPage("dashboard")}>← Dashboard</button>}
           <div style={S.pageTitle}>{PAGE_TITLES[page]||"Dashboard"}</div>
         </div>
@@ -10157,7 +10208,7 @@ export default function App(){
           <span style={S.sessionBadge}>{CURRENT_SESSION} · {CURRENT_TERM}</span>
         </div>
       </div>
-      <div style={S.content}>
+      <div style={S.content(isMobile)}>
         {page==="analytics"&&(userCanAccess(currentUser,"analytics")?<AnalyticsModule students={students} attendance={attendance} results={results}/>:<AccessDenied/>)}
         {page==="dashboard"&&<DashboardHome students={students} results={results} fees={fees} attendance={attendance} staff={staff} settings={settings} currentUser={currentUser} onNavigate={navigate}/>}
         {page==="students"&&(userCanAccess(currentUser,"students")?<StudentsModule students={students} setStudents={setStudents}/>:<AccessDenied/>)}
