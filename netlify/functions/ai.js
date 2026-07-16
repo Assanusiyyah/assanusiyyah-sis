@@ -43,7 +43,11 @@ exports.handler = async function(event, context) {
         "x-api-key": process.env.ANTHROPIC_API_KEY || ""
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        // Netlify's free-tier functions time out around 10s — Sonnet-class
+        // models can run longer than that for a full structured response,
+        // so this proxy uses Haiku for speed. Fine for template-filling
+        // tasks like lesson notes; not meant for tasks needing deep reasoning.
+        model: "claude-haiku-4-5-20251001",
         max_tokens: max_tokens || 1500,
         ...(system ? { system } : {}),
         messages
