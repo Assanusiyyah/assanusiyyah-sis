@@ -9478,8 +9478,10 @@ function LoginScreen({settings,onLogin,onParentLogin,gallery}){
       } else {
         // Parent login: admission number + parent phone
         if(onParentLogin){
-          const result = onParentLogin(username.trim(), password.trim());
-          if(!result){setError("Admission number or phone number not found. Check and try again.");setLoading(false);setTimeout(()=>setError(""),5000);}
+          setError("Verifying...");
+          Promise.resolve(onParentLogin(username.trim(), password.trim())).then(function(result){
+            if(!result){setError("Admission number or phone number not found. Check and try again.");setLoading(false);setTimeout(()=>setError(""),5000);}
+          });
         }
       }
   }
@@ -9945,6 +9947,7 @@ export default function App(){
   const [page,setPage]=useState("dashboard");
   const [dbStatus,setDbStatus]=useState("loading");
   const [parentStudent,setParentStudent]=useState(null); // set when parent logs in
+  const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[]});
   const isMobile = useIsMobile();
   const [sidebarOpen,setSidebarOpen]=useState(false);
 
@@ -10118,16 +10121,44 @@ export default function App(){
 
   // Show parent portal if parent logged in
   if(parentStudent){
-    return <ParentPortal student={parentStudent} students={students} results={results} attendance={attendance} fees={fees} settings={settings} diary={diary} elibrary={elibrary} onLogout={()=>setParentStudent(null)}/>;
+    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} onLogout={()=>{setParentStudent(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[]});}}/>;
   }
 
-  function handleParentLogin(admissionNo, phone){
-    const found = students.find(function(s){
-      return s.admissionNo&&s.admissionNo.toLowerCase()===admissionNo.toLowerCase()&&
-        s.parentPhone&&s.parentPhone.replace(/\D/g,"").slice(-10)===phone.replace(/\D/g,"").slice(-10);
-    });
-    if(found){ setParentStudent(found); return true; }
-    return false;
+  // Parent credentials (Admission No. + registered phone) are verified
+  // server-side, since students isn't loaded client-side before a staff
+  // login — see parent-login.js / parent-data.js. The returned "parent"
+  // token is scoped to exactly one student and only ever used against
+  // /api/parent-data, never /api/db (which would return every family's
+  // records, not just this one).
+  async function handleParentLogin(admissionNo, phone){
+    try{
+      const loginRes = await fetch("/api/parent-login", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({admissionNo, phone})
+      }).then(r=>r.json());
+
+      if(!loginRes.success||!loginRes.token||!loginRes.student) return false;
+
+      const dataRes = await fetch("/api/parent-data", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+loginRes.token},
+        body:JSON.stringify({})
+      }).then(r=>r.json());
+
+      setParentData({
+        results: dataRes.results||[],
+        attendance: dataRes.attendance||[],
+        fees: dataRes.fees||[],
+        diary: dataRes.diary||[],
+        elibrary: dataRes.elibrary||[]
+      });
+      setParentStudent(loginRes.student);
+      return true;
+    } catch(e){
+      console.error("[ParentLogin]", e.message);
+      return false;
+    }
   }
 
   // Show login if not authenticated

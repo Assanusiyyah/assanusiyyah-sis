@@ -33,6 +33,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/parent-login"
+  to = "/.netlify/functions/parent-login"
+  status = 200
+
+[[redirects]]
+  from = "/api/parent-data"
+  to = "/.netlify/functions/parent-data"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
