@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import { printHtmlDoc, downloadHtmlDocAsPDF, shareHtmlDoc, exportTableToExcel, exportTableToPDF, shareTableAsPDF, downloadNodeAsPDF, shareNode } from "./exportUtils";
 
 // ══════════════════════════════════════════════════════
 // SUPABASE — calls our secure /api/db proxy.
@@ -627,14 +628,19 @@ function DashboardHome({students,results,fees,attendance,staff,settings,currentU
   // Pages this user can see (excluding dashboard itself)
   const accessibleModules=NAV.filter(n=>n.id!=="dashboard"&&userCanAccess(currentUser,n.id));
 
+  // Financial figures are sensitive — only show them to users with access
+  // to the Fees module itself (Bursar, School Administrator, root).
+  const canSeeFees = userCanAccess(currentUser,"fees");
   const quickStats=[
     {l:"Total Students",v:active.length},
     {l:"Day Students",v:active.filter(s=>s.boardingType==="Day").length},
     {l:"Boarders",v:active.filter(s=>s.boardingType==="Boarder").length},
     {l:"Staff Members",v:staff.filter(s=>s.active).length},
     {l:"School Average",v:avg+"%"},
-    {l:"Fees Collected",v:`₦${tp.toLocaleString()}`},
-    {l:"Outstanding",v:`₦${(tb-tp).toLocaleString()}`},
+    ...(canSeeFees?[
+      {l:"Fees Collected",v:`₦${tp.toLocaleString()}`},
+      {l:"Outstanding",v:`₦${(tb-tp).toLocaleString()}`},
+    ]:[]),
     {l:"Result Entries",v:curR.length},
   ];
 
@@ -854,6 +860,56 @@ function PrintButton({onPrint,label="Print"}){
 function WhatsAppButton({phone,message,label="WhatsApp"}){
   function handle(){const url=`https://wa.me/234${phone.replace(/^0/,"")}?text=${encodeURIComponent(message)}`;window.open(url,"_blank");}
   return(<button style={{...S.btn("success"),fontSize:11,padding:"5px 10px"}} onClick={handle}><span style={S.row}><Icon name="whatsapp" size={12}/>{label}</span></button>);
+}
+
+// Print / Download PDF / Share toolbar for an already-built printable HTML
+// document (receipts, report cards, ID cards, admission letters, etc.).
+// getHtml is a function (not a string) so it's always built fresh from
+// current data at click time, same as the existing printX() functions.
+function DocActionBar({getHtml,filename,title}){
+  const [busy,setBusy]=useState("");
+  async function handlePDF(){
+    setBusy("pdf");
+    try{ await downloadHtmlDocAsPDF(getHtml(), filename); }
+    catch(e){ alert("Could not generate PDF: "+e.message); }
+    setBusy("");
+  }
+  async function handleShare(){
+    setBusy("share");
+    try{ await shareHtmlDoc(getHtml(), filename, title); }
+    catch(e){ alert("Could not share: "+e.message); }
+    setBusy("");
+  }
+  function handlePrint(){ printHtmlDoc(getHtml()); }
+  return(
+    <div style={{...S.row,gap:6,flexWrap:"wrap"}}>
+      <button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px"}} onClick={handlePrint}><span style={S.row}><Icon name="print" size={12}/>Print</span></button>
+      <button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px",opacity:busy==="pdf"?0.6:1}} onClick={handlePDF} disabled={!!busy}><span style={S.row}>📄 {busy==="pdf"?"Generating...":"PDF"}</span></button>
+      <button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px",opacity:busy==="share"?0.6:1}} onClick={handleShare} disabled={!!busy}><span style={S.row}>📤 {busy==="share"?"Sharing...":"Share"}</span></button>
+    </div>
+  );
+}
+
+// Excel / PDF / Print toolbar for a raw tabular export (list tables,
+// broadsheets, attendance registers, financial statements, etc.)
+function TableActionBar({title,subtitle,columns,rows,filename,onPrint}){
+  const [busy,setBusy]=useState("");
+  function handleExcel(){ exportTableToExcel({sheetName:title,columns,rows,filename:filename||title}); }
+  function handlePDF(){ exportTableToPDF({title,subtitle,columns,rows,filename:filename||title}); }
+  async function handleShare(){
+    setBusy("share");
+    try{ await shareTableAsPDF({title,subtitle,columns,rows,filename:filename||title}); }
+    catch(e){ alert("Could not share: "+e.message); }
+    setBusy("");
+  }
+  return(
+    <div style={{...S.row,gap:6,flexWrap:"wrap"}}>
+      {onPrint&&<button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px"}} onClick={onPrint}><span style={S.row}><Icon name="print" size={12}/>Print</span></button>}
+      <button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px"}} onClick={handleExcel}><span style={S.row}>📊 Excel</span></button>
+      <button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px"}} onClick={handlePDF}><span style={S.row}>📄 PDF</span></button>
+      <button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px",opacity:busy?0.6:1}} onClick={handleShare} disabled={!!busy}><span style={S.row}>📤 {busy?"Sharing...":"Share"}</span></button>
+    </div>
+  );
 }
 
 // ══════════════════════════════════════════════════════
@@ -1200,6 +1256,62 @@ function AnalyticsModule({students, attendance, results}){
 // ══════════════════════════════════════════════════════
 // STUDENTS — Enhanced with passport, genotype, boarding type
 // ══════════════════════════════════════════════════════
+// Isolated from StudentsModule's table so typing in this form never
+// re-renders the (potentially large, photo-heavy) student table below it.
+function StudentFormModal({open,student,onSave,onClose}){
+  const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",class:"JSS1",arm:"A",entryClass:"JSS1",entrySession:CURRENT_SESSION,parentName:"",parentPhone:"",parentEmail:"",address:"",religion:"Islam",bloodGroup:"O+",genotype:"AA",boardingType:"Day",phone:"",passport:"",active:true};
+  const [form,setForm]=useState(student?{...student}:ef);
+  const passRef=useRef();
+
+  useEffect(function(){
+    if(open) setForm(student?{...student}:ef);
+  },[open,student]);
+
+  function handlePassport(e){
+    const file=e.target.files[0];if(!file)return;
+    if(file.size>41000)return alert("Passport photo must be under 40KB. Please compress and re-upload.");
+    const reader=new FileReader();reader.onload=ev=>setForm(p=>({...p,passport:ev.target.result}));reader.readAsDataURL(file);
+  }
+
+  const FF=({label,field,type="text",opts,required})=>(
+    <div style={S.formGroup}>
+      <label style={S.label}>{label}{required&&<span style={{color:C.danger}}> *</span>}</label>
+      {opts?<select style={{...S.select,width:"100%"}} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}>{opts.map(o=><option key={o}>{o}</option>)}</select>
+      :<input style={S.input} type={type} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}/>}
+    </div>
+  );
+
+  function handleSave(){
+    if(!form.surname||!form.firstname)return alert("Surname and First Name required.");
+    onSave(form);
+  }
+
+  return(
+    <Modal open={open} onClose={onClose} title={student?"Edit Student Record":"Enrol New Student"} wide>
+      <div style={{...S.row,gap:16,marginBottom:14,alignItems:"flex-start"}}>
+        <div style={{flexShrink:0,textAlign:"center"}}>
+          <div style={{width:72,height:72,borderRadius:6,border:`2px dashed ${C.border}`,overflow:"hidden",background:"#F9FAFB",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:6}}>
+            {form.passport?<img src={form.passport} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<Icon name="students" size={28} color={C.border}/>}
+          </div>
+          <button style={{...S.btn("secondary"),fontSize:10,padding:"4px 8px"}} onClick={()=>passRef.current.click()}>Upload Passport</button>
+          <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Max 40KB</div>
+          <input ref={passRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePassport}/>
+        </div>
+        <div style={{flex:1}}>
+          <div style={S.grid2}><FF label="Surname" field="surname" required/><FF label="First Name" field="firstname" required/></div>
+          <div style={S.grid2}><FF label="Middle Name" field="middlename"/><div style={{...S.formGroup,background:"#FEF3C7",borderRadius:8,padding:"6px 8px",border:"1px solid #F59E0B"}}><label style={{...S.label,color:"#92400E",fontWeight:800}}>📅 Date of Birth *</label><input type="date" style={{...S.input,borderColor:"#F59E0B"}} value={form.dob} onChange={function(e){setForm(function(p){return{...p,dob:e.target.value};});}}/><div style={{fontSize:9,color:"#92400E",marginTop:2}}>Required for age calculation, analytics &amp; clinic</div></div></div>
+        </div>
+      </div>
+      <div style={S.grid3}><FF label="Gender" field="gender" opts={["Male","Female"]}/><FF label="Religion" field="religion" opts={["Islam","Christianity","Others"]}/><FF label="Boarding Type" field="boardingType" opts={["Day","Boarder"]}/></div>
+      <div style={S.grid4}><FF label="Blood Group" field="bloodGroup" opts={["A+","A-","B+","B-","AB+","AB-","O+","O-"]}/><FF label="Genotype" field="genotype" opts={["AA","AS","SS","AC","SC"]}/><FF label="Class" field="class" opts={CLASSES}/><FF label="Arm" field="arm" opts={ARMS}/></div>
+      <div style={S.grid3}><FF label="Entry Class" field="entryClass" opts={CLASSES}/><FF label="Entry Session" field="entrySession" opts={SESSIONS}/><FF label="Student Phone" field="phone"/></div>
+      <div style={S.grid2}><FF label="Parent/Guardian Name" field="parentName"/><FF label="Parent Phone" field="parentPhone"/></div>
+      <div style={S.grid2}><FF label="Parent Email" field="parentEmail"/><div style={S.formGroup}><label style={S.label}>Home Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div></div>
+      <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={onClose}>Cancel</button><button style={S.btn()} onClick={handleSave}>{student?"Save Changes":"Enrol Student"}</button></div>
+    </Modal>
+  );
+}
+
 function StudentsModule({students,setStudents}){
   const [tab,setTab]=useState("list");
   const [search,setSearch]=useState("");
@@ -1215,37 +1327,21 @@ function StudentsModule({students,setStudents}){
   const [bulkRows,setBulkRows]=useState(
     Array.from({length:15},function(_,i){return{id:"row"+i,surname:"",firstname:"",middlename:"",gender:"Male",dob:"",parentName:"",parentPhone:"",bloodGroup:"O+",genotype:"AA",religion:"Islam",boardingType:"Day"};})
   );
-  const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",class:"JSS1",arm:"A",entryClass:"JSS1",entrySession:CURRENT_SESSION,parentName:"",parentPhone:"",parentEmail:"",address:"",religion:"Islam",bloodGroup:"O+",genotype:"AA",boardingType:"Day",phone:"",passport:"",active:true};
-  const [form,setForm]=useState(ef);
-  const passRef=useRef();
+  const [editingStudent,setEditingStudent]=useState(null);
 
   const filtered=students.filter(s=>
     (!fCls||s.class===fCls)&&(!fType||s.boardingType===fType)&&
     (!search||`${s.surname} ${s.firstname} ${s.admissionNo}`.toLowerCase().includes(search.toLowerCase()))
   );
 
-  function openAdd(){setForm(ef);setEditing(null);setShowForm(true);}
-  function openEdit(s){setForm({...s});setEditing(s.id);setShowForm(true);}
-  function save(){
-    if(!form.surname||!form.firstname)return alert("Surname and First Name required.");
+  function openAdd(){setEditingStudent(null);setEditing(null);setShowForm(true);}
+  function openEdit(s){setEditingStudent(s);setEditing(s.id);setShowForm(true);}
+  function handleFormSave(form){
     if(editing){setStudents(p=>p.map(s=>s.id===editing?{...form,id:editing}:s));}
     else{const yr=form.entrySession.split("/")[0];setStudents(p=>[...p,{...form,id:genId(),admissionNo:admNo(yr,students.length+1)}]);}
     setShowForm(false);
   }
-  function handlePassport(e){
-    const file=e.target.files[0];if(!file)return;
-    if(file.size>41000)return alert("Passport photo must be under 40KB. Please compress and re-upload.");
-    const reader=new FileReader();reader.onload=ev=>setForm(p=>({...p,passport:ev.target.result}));reader.readAsDataURL(file);
-  }
   function deactivate(id){if(window.confirm("Mark student as graduated/exited?"))setStudents(p=>p.map(s=>s.id===id?{...s,active:false}:s));}
-
-  const FF=({label,field,type="text",opts,required})=>(
-    <div style={S.formGroup}>
-      <label style={S.label}>{label}{required&&<span style={{color:C.danger}}> *</span>}</label>
-      {opts?<select style={{...S.select,width:"100%"}} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}>{opts.map(o=><option key={o}>{o}</option>)}</select>
-      :<input style={S.input} type={type} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}/>}
-    </div>
-  );
 
   function updateBulkRow(idx,field,value){
     setBulkRows(function(p){return p.map(function(r,i){return i===idx?{...r,[field]:value}:r;});});
@@ -1292,6 +1388,13 @@ function StudentsModule({students,setStudents}){
       </div>
       <button style={S.btn()} onClick={openAdd}><span style={S.row}><Icon name="plus" size={13}/> Enrol Student</span></button>
     </div>
+    <div style={{marginBottom:10}}>
+      <TableActionBar
+        title="Students List"
+        columns={["Adm. No.","Full Name","Class","Type","Blood/Geno","Parent","Phone","Status"]}
+        rows={filtered.map(s=>[s.admissionNo,`${s.surname} ${s.firstname} ${s.middlename||""}`.trim(),s.class+s.arm,s.boardingType,`${s.bloodGroup}/${s.genotype}`,s.parentName,s.parentPhone,s.active?"Active":"Exited"])}
+      />
+    </div>
     <div style={S.card}>
       <div style={{overflowX:"auto"}}>
       <table style={S.table}><thead><tr>{["Passport","Adm. No.","Full Name","Class","Type","Blood/Geno","Parent","Phone","Status","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
@@ -1319,28 +1422,7 @@ function StudentsModule({students,setStudents}){
       </div>
     </div>
 
-    <Modal open={showForm} onClose={()=>setShowForm(false)} title={editing?"Edit Student Record":"Enrol New Student"} wide>
-      <div style={{...S.row,gap:16,marginBottom:14,alignItems:"flex-start"}}>
-        <div style={{flexShrink:0,textAlign:"center"}}>
-          <div style={{width:72,height:72,borderRadius:6,border:`2px dashed ${C.border}`,overflow:"hidden",background:"#F9FAFB",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:6}}>
-            {form.passport?<img src={form.passport} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<Icon name="students" size={28} color={C.border}/>}
-          </div>
-          <button style={{...S.btn("secondary"),fontSize:10,padding:"4px 8px"}} onClick={()=>passRef.current.click()}>Upload Passport</button>
-          <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Max 40KB</div>
-          <input ref={passRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePassport}/>
-        </div>
-        <div style={{flex:1}}>
-          <div style={S.grid2}><FF label="Surname" field="surname" required/><FF label="First Name" field="firstname" required/></div>
-          <div style={S.grid2}><FF label="Middle Name" field="middlename"/><div style={{...S.formGroup,background:"#FEF3C7",borderRadius:8,padding:"6px 8px",border:"1px solid #F59E0B"}}><label style={{...S.label,color:"#92400E",fontWeight:800}}>📅 Date of Birth *</label><input type="date" style={{...S.input,borderColor:"#F59E0B"}} value={form.dob} onChange={function(e){setForm(function(p){return{...p,dob:e.target.value};});}}/><div style={{fontSize:9,color:"#92400E",marginTop:2}}>Required for age calculation, analytics &amp; clinic</div></div></div>v>
-        </div>
-      </div>
-      <div style={S.grid3}><FF label="Gender" field="gender" opts={["Male","Female"]}/><FF label="Religion" field="religion" opts={["Islam","Christianity","Others"]}/><FF label="Boarding Type" field="boardingType" opts={["Day","Boarder"]}/></div>
-      <div style={S.grid4}><FF label="Blood Group" field="bloodGroup" opts={["A+","A-","B+","B-","AB+","AB-","O+","O-"]}/><FF label="Genotype" field="genotype" opts={["AA","AS","SS","AC","SC"]}/><FF label="Class" field="class" opts={CLASSES}/><FF label="Arm" field="arm" opts={ARMS}/></div>
-      <div style={S.grid3}><FF label="Entry Class" field="entryClass" opts={CLASSES}/><FF label="Entry Session" field="entrySession" opts={SESSIONS}/><FF label="Student Phone" field="phone"/></div>
-      <div style={S.grid2}><FF label="Parent/Guardian Name" field="parentName"/><FF label="Parent Phone" field="parentPhone"/></div>
-      <div style={S.grid2}><FF label="Parent Email" field="parentEmail"/><div style={S.formGroup}><label style={S.label}>Home Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div></div>
-      <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={()=>setShowForm(false)}>Cancel</button><button style={S.btn()} onClick={save}>{editing?"Save Changes":"Enrol Student"}</button></div>
-    </Modal>
+    <StudentFormModal open={showForm} student={editingStudent} onSave={handleFormSave} onClose={()=>setShowForm(false)}/>
 
     <Modal open={!!viewStu} onClose={()=>setViewStu(null)} title="Student Profile" wide>
       {viewStu&&<div>
@@ -1520,6 +1602,20 @@ function AttendanceModule({students,attendance,setAttendance,settings}){
       <div style={{...S.card,overflowX:"auto"}}>
         <div style={S.cardTitle}>Class Register — {selCls} | {selTerm} {selSess}</div>
         {classStudents.length===0?<div style={{textAlign:"center",color:C.textMuted,padding:24}}>No students.</div>:<>
+        <div style={{marginBottom:10}}>
+          <TableActionBar
+            title={"Attendance Register - "+selCls+" - "+selTerm+" "+selSess}
+            columns={["Student"].concat(allDates,["Present","Absent","%"])}
+            rows={classStudents.map(function(s){
+              var sum=getAttSummary(s.id);
+              var dateCells=allDates.map(function(d){
+                var rec=attendance.find(function(a){return a.studentId===s.id&&a.date===d;});
+                return rec&&rec.present===true?"P":rec&&rec.present===false?"A":"–";
+              });
+              return [s.surname+" "+s.firstname].concat(dateCells,[sum.present,sum.absent,sum.pct+"%"]);
+            })}
+          />
+        </div>
         <table style={{...S.table,fontSize:10}}>
           <thead><tr>
             <th style={{...S.th,minWidth:120}}>Student</th>
@@ -1657,7 +1753,7 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,settings,c
     alert("Reminders sent to "+unpaid.length+" parent(s).");
   }
 
-  function printReceipt(rec){
+  function buildReceiptHtml(rec){
     var stu = rec.student || students.find(function(s){return s.id===rec.studentId;});
     var logo = settings&&settings.schoolLogo ? `<img src="${settings.schoolLogo}" style="width:70px;height:70px;object-fit:contain;" alt=""/>` : "";
     var stamp = settings&&settings.schoolStamp ? `<img src="${settings.schoolStamp}" style="height:60px;object-fit:contain;" alt=""/>` : `<div style="width:70px;height:70px;border:1px dashed #ccc;border-radius:50%;"></div>`;
@@ -1734,8 +1830,17 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
 
 <div style="text-align:center;margin-top:16px;font-size:9px;color:#888;">This is an official receipt of ${SCHOOL_NAME}. Please keep this for your records.</div>
 </body></html>`;
-    var w = window.open("","_blank");
-    if(w){ w.document.write(html); w.document.close(); w.print(); }
+    return html;
+  }
+
+  function printReceipt(rec){ printHtmlDoc(buildReceiptHtml(rec)); }
+  async function downloadReceiptPDF(rec){
+    try{ await downloadHtmlDocAsPDF(buildReceiptHtml(rec), "Receipt_"+rec.receipt); }
+    catch(e){ alert("Could not generate PDF: "+e.message); }
+  }
+  async function shareReceipt(rec){
+    try{ await shareHtmlDoc(buildReceiptHtml(rec), "Receipt_"+rec.receipt, "Fee Receipt "+rec.receipt); }
+    catch(e){ alert("Could not share: "+e.message); }
   }
 
   // Totals for expenditure
@@ -1795,6 +1900,18 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
             </div>
           </div>
 
+          <div style={{marginBottom:10}}>
+            <TableActionBar
+              title={"Fee Records - "+fSess+" "+fTerm}
+              columns={["Receipt","Student","Class","Fee Type","Billed","Paid","Balance","Status","Date"]}
+              rows={filtered.map(function(f){
+                var stu = students.find(function(s){return s.id===f.studentId;});
+                var bal = (f.amount||0)-(f.amountPaid||0);
+                return [f.receipt,stu?(stu.surname+" "+stu.firstname):"—",stu?(stu.class+(stu.arm||"")):"—",f.feeType||"School Fees",f.amount||0,f.amountPaid||0,bal,f.status,f.datePaid||""];
+              })}
+            />
+          </div>
+
           {/* Fee records table */}
           <div style={S.card}>
             <div style={{overflowX:"auto"}}>
@@ -1824,7 +1941,11 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                         <td style={S.td}><span style={S.badge(f.status==="Paid"?"green":f.status==="Part-Payment"?"yellow":"red")}>{f.status}</span></td>
                         <td style={{...S.td,fontSize:10}}>{formatDate(f.datePaid||"")}</td>
                         <td style={S.td}>
-                          <button onClick={function(){printReceipt({...f,student:stu});}} style={{...S.btn("blue"),fontSize:10,padding:"2px 8px"}}>🖨 Receipt</button>
+                          <div style={{display:"flex",gap:4}}>
+                            <button onClick={function(){printReceipt({...f,student:stu});}} style={{...S.btn("blue"),fontSize:10,padding:"2px 8px"}}>🖨</button>
+                            <button onClick={function(){downloadReceiptPDF({...f,student:stu});}} style={{...S.btn("secondary"),fontSize:10,padding:"2px 8px"}}>📄 PDF</button>
+                            <button onClick={function(){shareReceipt({...f,student:stu});}} style={{...S.btn("gold"),fontSize:10,padding:"2px 8px"}}>📤</button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1907,8 +2028,10 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                 <div style={{fontSize:16,fontWeight:700,color:C.success,marginBottom:4}}>✅ Payment Recorded!</div>
                 <div style={{fontSize:12,color:C.textMuted}}>Receipt No: <b>{showReceipt.receipt}</b> · Status: <span style={S.badge(showReceipt.status==="Paid"?"green":showReceipt.status==="Part-Payment"?"yellow":"red")}>{showReceipt.status}</span></div>
               </div>
-              <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+              <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
                 <button style={S.btn()} onClick={function(){printReceipt(showReceipt);}}>🖨 Print Receipt</button>
+                <button style={S.btn("blue")} onClick={function(){downloadReceiptPDF(showReceipt);}}>⬇ Download PDF</button>
+                <button style={S.btn("gold")} onClick={function(){shareReceipt(showReceipt);}}>📤 Share</button>
                 {showReceipt.student&&showReceipt.student.parentPhone ? (
                   <button style={S.btn("green")} onClick={function(){
                     var bal = (showReceipt.amount||0)-(showReceipt.amountPaid||0);
@@ -2017,6 +2140,26 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
               <span>Total Expenditure (Session)</span>
               <span>₦{totalExp.toLocaleString()}</span>
             </div>
+          </div>
+          <div style={{marginTop:14}}>
+            <TableActionBar
+              title={"Financial Statement - "+fTerm+" "+fSess}
+              columns={["Class","Billed","Paid","Collection %","Records"]}
+              rows={CLASSES.map(function(cls){
+                var clsFees = fees.filter(function(f){
+                  var stu = students.find(function(s){return s.id===f.studentId;});
+                  return f.session===fSess&&f.term===fTerm&&stu&&stu.class===cls;
+                });
+                var billed = clsFees.reduce(function(a,f){return a+(f.amount||0);},0);
+                var paid = clsFees.reduce(function(a,f){return a+(f.amountPaid||0);},0);
+                var pct = billed ? Math.round(paid/billed*100) : 0;
+                return [cls,billed,paid,pct+"%",clsFees.length];
+              }).concat([
+                ["TOTAL BILLED",fees.filter(function(f){return f.session===fSess&&f.term===fTerm;}).reduce(function(a,f){return a+(f.amount||0);},0),"","",""],
+                ["TOTAL COLLECTED","",fees.filter(function(f){return f.session===fSess&&f.term===fTerm;}).reduce(function(a,f){return a+(f.amountPaid||0);},0),"",""],
+                ["TOTAL EXPENDITURE (SESSION)","","","",totalExp]
+              ])}
+            />
           </div>
         </div>
       ) : null}
@@ -2432,13 +2575,16 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
     if(w){ w.document.write(html); w.document.close(); w.print(); }
   }
 
-  function downloadPDF(student){
+  async function downloadPDF(student){
     var html = printReportCard(student);
-    var blob = new Blob([html],{type:"text/html"});
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = student.surname+"_"+student.firstname+"_Report_"+selTerm+"_"+selSess+".html";
-    a.click();
+    try{ await downloadHtmlDocAsPDF(html, student.surname+"_"+student.firstname+"_Report_"+selTerm+"_"+selSess); }
+    catch(e){ alert("Could not generate PDF: "+e.message); }
+  }
+
+  async function shareReportCard(student){
+    var html = printReportCard(student);
+    try{ await shareHtmlDoc(html, student.surname+"_"+student.firstname+"_Report_"+selTerm+"_"+selSess, "Report Card — "+student.surname+" "+student.firstname); }
+    catch(e){ alert("Could not share: "+e.message); }
   }
 
   function shareWhatsApp(student){
@@ -2591,6 +2737,22 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
             </div>
             <button style={S.btn()} onClick={bulkPrint}>🖨 Bulk Print All Cards</button>
           </div>
+          <div style={{marginTop:10}}>
+            <TableActionBar
+              title={"Broadsheet - "+selClass+selArm+" - "+selTerm+" "+selSess}
+              columns={["Student"].concat(subjects,["Total","Avg","Position"])}
+              rows={classStudents.map(function(stu){
+                var stats = getStudentStats(stu.id);
+                var subjectCells = subjects.map(function(sub){
+                  var r = getResult(stu.id, sub);
+                  return r ? (r.total||0) : "—";
+                });
+                return [stu.surname+" "+stu.firstname].concat(subjectCells,[
+                  stats?stats.totalScore:"—", stats?stats.avg:"—", stats?ordinal(stats.position):"—"
+                ]);
+              })}
+            />
+          </div>
         </div>
 
         <div style={{...S.card,overflowX:"auto"}}>
@@ -2672,9 +2834,10 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                 <input style={{...S.input,width:80}} type="number" value={daysOpened} onChange={function(e){setDaysOpened(e.target.value);}} placeholder="0"/>
               </div>
             </div>
-            <div style={{display:"flex",gap:8}}>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <button onClick={function(){openPrint(stu);}} style={S.btn()}>🖨 Print</button>
-              <button onClick={function(){downloadPDF(stu);}} style={S.btn("blue")}>⬇ Download</button>
+              <button onClick={function(){downloadPDF(stu);}} style={S.btn("blue")}>⬇ Download PDF</button>
+              <button onClick={function(){shareReportCard(stu);}} style={S.btn("gold")}>📤 Share</button>
               <button onClick={function(){shareWhatsApp(stu);}} style={S.btn("green")}>📱 WhatsApp</button>
             </div>
           </div>
@@ -2851,30 +3014,86 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
 }
 
 
+// Isolated from StaffModule's table so typing in this form never
+// re-renders the staff table below it.
+function StaffFormModal({open,staffMember,onSave,onClose}){
+  const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",phone:"",address:"",qualification:"",nextOfKin:"",nextOfKinPhone:"",subjects:[],classes:[],periodsPerWeek:5,role:"Teacher",active:true,password:""};
+  const [form,setForm]=useState(staffMember?{...staffMember}:ef);
+  const [selSubs,setSelSubs]=useState(staffMember?(staffMember.subjects||[]):[]);
+  const [selCls,setSelCls]=useState(staffMember?(staffMember.classes||[]):[]);
+
+  useEffect(function(){
+    if(open){
+      setForm(staffMember?{...staffMember}:ef);
+      setSelSubs(staffMember?(staffMember.subjects||[]):[]);
+      setSelCls(staffMember?(staffMember.classes||[]):[]);
+    }
+  },[open,staffMember]);
+
+  const allSubs=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
+
+  function toggleSub(sub){setSelSubs(p=>p.includes(sub)?p.filter(x=>x!==sub):[...p,sub]);}
+  function toggleCls(cls){setSelCls(p=>p.includes(cls)?p.filter(x=>x!==cls):[...p,cls]);}
+  const FF=({label,field,type="text",opts})=>(<div style={S.formGroup}><label style={S.label}>{label}</label>{opts?<select style={{...S.select,width:"100%"}} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}>{opts.map(o=><option key={o}>{o}</option>)}</select>:<input style={S.input} type={type} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}/> }</div>);
+
+  function handleSave(){
+    if(!form.surname||!form.firstname)return alert("Surname and First Name required.");
+    onSave({...form,subjects:selSubs,classes:selCls});
+  }
+
+  return(
+    <Modal open={open} onClose={onClose} title={staffMember?"Edit Staff Record":"Add Staff Member"} wide>
+      <div style={S.grid3}><FF label="Surname *" field="surname"/><FF label="First Name *" field="firstname"/><FF label="Middle Name" field="middlename"/></div>
+      <div style={S.grid3}><FF label="Date of Birth" field="dob" type="date"/><FF label="Gender" field="gender" opts={["Male","Female"]}/><FF label="Phone" field="phone"/></div>
+      <div style={S.grid2}><FF label="Highest Qualification" field="qualification"/><FF label="Role" field="role" opts={["Teacher","Admin","Bursar","Others"]}/></div>
+      <div style={S.grid2}><FF label="Next of Kin" field="nextOfKin"/><FF label="Next of Kin Phone" field="nextOfKinPhone"/></div>
+      <div style={S.formGroup}><FF label="Periods per Week" field="periodsPerWeek" type="number"/></div>
+      <div style={S.formGroup}><label style={S.label}>Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div>
+      <div style={S.formGroup}>
+        <label style={S.label}>Subjects Taught</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {allSubs.map(sub=><button key={sub} type="button" onClick={()=>toggleSub(sub)} style={{...S.btn(selSubs.includes(sub)?"primary":"secondary"),fontSize:10,padding:"3px 8px"}}>{sub}</button>)}
+        </div>
+      </div>
+      <div style={S.formGroup}>
+        <label style={S.label}>Classes</label>
+        <div style={{display:"flex",gap:6}}>
+          {CLASSES.map(cls=><button key={cls} type="button" onClick={()=>toggleCls(cls)} style={{...S.btn(selCls.includes(cls)?"primary":"secondary"),fontSize:11,padding:"4px 10px"}}>{cls}</button>)}
+        </div>
+      </div>
+      <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={onClose}>Cancel</button><button style={S.btn()} onClick={handleSave}>{staffMember?"Save Changes":"Add Staff"}</button></div>
+    </Modal>
+  );
+}
+
 function StaffModule({staff,setStaff}){
   const [search,setSearch]=useState("");
   const [showForm,setShowForm]=useState(false);
   const [editing,setEditing]=useState(null);
+  const [editingStaff,setEditingStaff]=useState(null);
   const [viewStaff,setViewStaff]=useState(null);
-  const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",phone:"",address:"",qualification:"",nextOfKin:"",nextOfKinPhone:"",subjects:[],classes:[],periodsPerWeek:5,role:"Teacher",active:true,password:""};
-  const [form,setForm]=useState(ef);
-  const [selSubs,setSelSubs]=useState([]);
-  const [selCls,setSelCls]=useState([]);
 
-  const allSubs=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
   const filtered=staff.filter(s=>!search||`${s.surname} ${s.firstname}`.toLowerCase().includes(search.toLowerCase()));
 
-  function openAdd(){setForm(ef);setSelSubs([]);setSelCls([]);setEditing(null);setShowForm(true);}
-  function openEdit(s){setForm({...s});setSelSubs(s.subjects||[]);setSelCls(s.classes||[]);setEditing(s.id);setShowForm(true);}
-  function save(){if(!form.surname||!form.firstname)return alert("Surname and First Name required.");const rec={...form,subjects:selSubs,classes:selCls};if(editing){setStaff(p=>p.map(s=>s.id===editing?{...rec,id:editing}:s));}else{setStaff(p=>[...p,{...rec,id:genId()}]);}setShowForm(false);}
-  function toggleSub(sub){setSelSubs(p=>p.includes(sub)?p.filter(x=>x!==sub):[...p,sub]);}
-  function toggleCls(cls){setSelCls(p=>p.includes(cls)?p.filter(x=>x!==cls):[...p,cls]);}
-  const FF=({label,field,type="text",opts})=>(<div style={S.formGroup}><label style={S.label}>{label}</label>{opts?<select style={{...S.select,width:"100%"}} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}>{opts.map(o=><option key={o}>{o}</option>)}</select>:<input style={S.input} type={type} value={form[field]} onChange={e=>setForm(p=>({...p,[field]:e.target.value}))}/> }</div>);
+  function openAdd(){setEditingStaff(null);setEditing(null);setShowForm(true);}
+  function openEdit(s){setEditingStaff(s);setEditing(s.id);setShowForm(true);}
+  function handleFormSave(rec){
+    if(editing){setStaff(p=>p.map(s=>s.id===editing?{...rec,id:editing}:s));}
+    else{setStaff(p=>[...p,{...rec,id:genId()}]);}
+    setShowForm(false);
+  }
 
   return(<div>
     <div style={{...S.row,marginBottom:12,justifyContent:"space-between"}}>
       <div style={{position:"relative"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)"}}><Icon name="search" size={13} color={C.textMuted}/></span><input style={{...S.input,paddingLeft:27,width:190}} placeholder="Search staff..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
       <button style={S.btn()} onClick={openAdd}><span style={S.row}><Icon name="plus" size={13}/> Add Staff</span></button>
+    </div>
+    <div style={{marginBottom:10}}>
+      <TableActionBar
+        title="Staff List"
+        columns={["Full Name","DOB","Phone","Qualification","Subjects","Classes","Periods/Wk","Role"]}
+        rows={filtered.map(s=>[`${s.surname} ${s.firstname} ${s.middlename||""}`.trim(),formatDate(s.dob),s.phone,s.qualification,(s.subjects||[]).join(", "),(s.classes||[]).join(", "),s.periodsPerWeek,s.role])}
+      />
     </div>
     <div style={S.card}>
       <table style={S.table}><thead><tr>{["Full Name","DOB","Phone","Qualification","Subjects","Classes","Periods/Wk","Role","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
@@ -2896,27 +3115,7 @@ function StaffModule({staff,setStaff}){
       </tbody></table>
     </div>
 
-    <Modal open={showForm} onClose={()=>setShowForm(false)} title={editing?"Edit Staff Record":"Add Staff Member"} wide>
-      <div style={S.grid3}><FF label="Surname *" field="surname"/><FF label="First Name *" field="firstname"/><FF label="Middle Name" field="middlename"/></div>
-      <div style={S.grid3}><FF label="Date of Birth" field="dob" type="date"/><FF label="Gender" field="gender" opts={["Male","Female"]}/><FF label="Phone" field="phone"/></div>
-      <div style={S.grid2}><FF label="Highest Qualification" field="qualification"/><FF label="Role" field="role" opts={["Teacher","Admin","Bursar","Others"]}/></div>
-      <div style={S.grid2}><FF label="Next of Kin" field="nextOfKin"/><FF label="Next of Kin Phone" field="nextOfKinPhone"/></div>
-      <div style={S.formGroup}><FF label="Periods per Week" field="periodsPerWeek" type="number"/></div>
-      <div style={S.formGroup}><label style={S.label}>Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div>
-      <div style={S.formGroup}>
-        <label style={S.label}>Subjects Taught</label>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {allSubs.map(sub=><button key={sub} type="button" onClick={()=>toggleSub(sub)} style={{...S.btn(selSubs.includes(sub)?"primary":"secondary"),fontSize:10,padding:"3px 8px"}}>{sub}</button>)}
-        </div>
-      </div>
-      <div style={S.formGroup}>
-        <label style={S.label}>Classes</label>
-        <div style={{display:"flex",gap:6}}>
-          {CLASSES.map(cls=><button key={cls} type="button" onClick={()=>toggleCls(cls)} style={{...S.btn(selCls.includes(cls)?"primary":"secondary"),fontSize:11,padding:"4px 10px"}}>{cls}</button>)}
-        </div>
-      </div>
-      <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={()=>setShowForm(false)}>Cancel</button><button style={S.btn()} onClick={save}>{editing?"Save Changes":"Add Staff"}</button></div>
-    </Modal>
+    <StaffFormModal open={showForm} staffMember={editingStaff} onSave={handleFormSave} onClose={()=>setShowForm(false)}/>
 
     <Modal open={!!viewStaff} onClose={()=>setViewStaff(null)} title="Staff Profile">
       {viewStaff&&<div>
@@ -4223,19 +4422,11 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
 // ══════════════════════════════════════════════════════
 // LESSON NOTES MODULE (Teacher-facing)
 // ══════════════════════════════════════════════════════
-function LessonsModule({staff, students, lessons, setLessons, assignments, setAssignments, currentUser}){
-  const [tab, setTab] = useState("list");
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [viewLesson, setViewLesson] = useState(null);
-  const [filterCls, setFilterCls] = useState("");
-  const [filterSub, setFilterSub] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [genError, setGenError] = useState("");
-
-  const isAdmin = currentUser.role==="root"||currentUser.role==="Admin";
-  const myStaff = staff.find(s=>s.id===currentUser.staffId||
-    (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
+// Isolated from LessonsModule's table so typing in this form (and the AI
+// auto-generate call, which sets several fields at once) never re-renders
+// the lessons table below it.
+function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
+  const allSubjects=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
 
   // Minimal input form — what the teacher actually fills before auto-generation
   const emptyForm = {
@@ -4254,37 +4445,33 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
   const [form, setForm] = useState(emptyForm);
   const [videoTitle, setVideoTitle] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
 
-  const filtered = lessons.filter(l=>
-    (!filterCls||l.class===filterCls) &&
-    (!filterSub||l.subject===filterSub) &&
-    (isAdmin || l.teacherId===(myStaff?.id||currentUser.staffId))
-  );
+  useEffect(function(){
+    if(!open) return;
+    if(lesson){
+      setForm({...lesson,
+        stepOne:{...(lesson.stepOne||{title:"Introduction / Set Induction",content:""})},
+        stepTwo:{...(lesson.stepTwo||{title:"Presentation",content:""})},
+        stepThree:{...(lesson.stepThree||{title:"Activity / Practice",content:""})},
+        videoLinks:[...(lesson.videoLinks||[])],
+        videoSearchSuggestions:[...(lesson.videoSearchSuggestions||[])],
+        keyPoints:lesson.keyPoints||"",
+        submissionOpen:lesson.submissionOpen!==false
+      });
+    } else {
+      const f={...emptyForm};
+      if(myStaff){f.teacherId=myStaff.id;f.subject=(myStaff.subjects||[])[0]||"";}
+      setForm(f);
+    }
+    setGenError("");
+    setVideoTitle("");setVideoUrl("");
+  },[open,lesson,myStaff]);
 
-  function openAdd(){
-    const f={...emptyForm};
-    if(myStaff){f.teacherId=myStaff.id;f.subject=(myStaff.subjects||[])[0]||"";}
-    setForm(f);setEditing(null);setGenError("");setShowForm(true);
-  }
-  function openEdit(l){
-    setForm({...l,
-      stepOne:{...(l.stepOne||{title:"Introduction / Set Induction",content:""})},
-      stepTwo:{...(l.stepTwo||{title:"Presentation",content:""})},
-      stepThree:{...(l.stepThree||{title:"Activity / Practice",content:""})},
-      videoLinks:[...(l.videoLinks||[])],
-      videoSearchSuggestions:[...(l.videoSearchSuggestions||[])],
-      keyPoints:l.keyPoints||"",
-      submissionOpen:l.submissionOpen!==false
-    });
-    setEditing(l.id);setGenError("");setShowForm(true);
-  }
-
-  function save(statusOverride){
+  function handleSave(statusOverride){
     if(!form.topic||!form.class||!form.subject) return alert("Date, Class, Subject and Topic are required.");
-    const toSave = statusOverride?{...form,status:statusOverride}:form;
-    if(editing){setLessons(p=>p.map(l=>l.id===editing?{...toSave,id:editing}:l));}
-    else{setLessons(p=>[...p,{...toSave,id:genId(),createdAt:today()}]);}
-    setShowForm(false);
+    onSave(statusOverride?{...form,status:statusOverride}:form);
   }
 
   function addVideo(){
@@ -4353,34 +4540,6 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
     }
   }
 
-  function createAssignment(lesson){
-    const existing = assignments.find(a=>a.lessonId===lesson.id);
-    if(existing){alert("Assignment already created for this lesson.");return;}
-    if(!lesson.assignment){alert("No assignment text in this lesson note.");return;}
-    setAssignments(p=>[...p,{
-      id:genId(),lessonId:lesson.id,teacherId:lesson.teacherId,
-      class:lesson.class,subject:lesson.subject,
-      title:lesson.topic+" — Assignment",
-      description:lesson.assignment,
-      dueDate:"",maxScore:20,status:"Active",createdAt:today()
-    }]);
-    alert("Assignment created! Students in "+lesson.class+" can now see and submit it (while submissions remain open).");
-  }
-
-  function toggleSubmission(lesson){
-    const newVal = lesson.submissionOpen===false ? true : false;
-    setLessons(p=>p.map(l=>l.id===lesson.id?{...l,submissionOpen:newVal}:l));
-    // Also reflect on the linked assignment's status
-    setAssignments(p=>p.map(a=>a.lessonId===lesson.id?{...a,status:newVal?"Active":"Closed"}:a));
-  }
-
-  function getTeacherName(id){
-    const t=staff.find(s=>s.id===id);
-    return t?t.surname+" "+t.firstname:"—";
-  }
-
-  const allSubjects=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
-
   const FF=({label,field,type="text",opts,sub})=>(
     <div style={S.formGroup}>
       <label style={S.label}>{label}</label>
@@ -4395,133 +4554,8 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
     </div>
   );
 
-  return(<div>
-    <div style={{...S.row,marginBottom:12,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-      <div style={S.row}>
-        <select style={S.select} value={filterCls} onChange={e=>setFilterCls(e.target.value)}>
-          <option value="">All Classes</option>{CLASSES.map(c=><option key={c}>{c}</option>)}
-        </select>
-        <select style={S.select} value={filterSub} onChange={e=>setFilterSub(e.target.value)}>
-          <option value="">All Subjects</option>{allSubjects.map(s=><option key={s}>{s}</option>)}
-        </select>
-      </div>
-      <button style={S.btn()} onClick={openAdd}><span style={S.row}><Icon name="plus" size={13}/>New Lesson Note</span></button>
-    </div>
-
-    <div style={S.card}>
-      <table style={S.table}>
-        <thead><tr>{["Date","Class","Subject","Topic","Teacher","Status","Submissions","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
-        <tbody>
-          {filtered.length===0&&<tr><td colSpan={8} style={{...S.td,textAlign:"center",color:C.textMuted,padding:28}}>No lesson notes yet.</td></tr>}
-          {filtered.map(l=>{
-            const hasAssignment=assignments.some(a=>a.lessonId===l.id);
-            const submissionOpen = l.submissionOpen!==false;
-            return(<tr key={l.id}>
-              <td style={S.td}>{formatDate(l.date)}</td>
-              <td style={S.td}>{l.class}{l.arm}</td>
-              <td style={S.td}>{l.subject}</td>
-              <td style={{...S.td,fontWeight:600}}>{l.topic}{l.generationStatus==="ai-generated"&&<span style={{...S.badge("blue"),marginLeft:6,fontSize:9}}>✨ AI</span>}</td>
-              <td style={S.td}>{getTeacherName(l.teacherId)}</td>
-              <td style={S.td}><span style={S.badge(l.status==="Published"?"green":"yellow")}>{l.status}</span></td>
-              <td style={S.td}>{hasAssignment?<span style={S.badge(submissionOpen?"green":"red")}>{submissionOpen?"🟢 Open":"🔒 Closed"}</span>:<span style={{fontSize:10,color:C.textMuted}}>—</span>}</td>
-              <td style={S.td}>
-                <div style={S.row}>
-                  <button style={{...S.btn("primary"),fontSize:10,padding:"3px 7px"}} onClick={()=>setViewLesson(l)}>View</button>
-                  <button style={{...S.btn("secondary"),fontSize:10,padding:"3px 7px"}} onClick={()=>openEdit(l)}>Edit</button>
-                  {!hasAssignment&&l.assignment&&<button style={{...S.btn("gold"),fontSize:10,padding:"3px 7px"}} onClick={()=>createAssignment(l)}>📝 Create Assignment</button>}
-                  {hasAssignment&&<button style={{...S.btn(submissionOpen?"danger":"success"),fontSize:10,padding:"3px 7px"}} onClick={()=>toggleSubmission(l)}>{submissionOpen?"🔒 Close Submissions":"🟢 Open Submissions"}</button>}
-                  <button style={{...S.btn("danger"),fontSize:10,padding:"3px 7px"}} onClick={()=>{if(window.confirm("Delete?"))setLessons(p=>p.filter(x=>x.id!==l.id));}}>Del</button>
-                </div>
-              </td>
-            </tr>);
-          })}
-        </tbody>
-      </table>
-    </div>
-
-    {/* View Lesson Modal */}
-    <Modal open={!!viewLesson} onClose={()=>setViewLesson(null)} title="Lesson Note" extraWide>
-      {viewLesson&&<div>
-        <div style={{background:C.primaryDark,borderRadius:8,padding:"14px 18px",marginBottom:16,color:C.white}}>
-          <div style={{...S.row,gap:12}}>
-            <SchoolLogoImg size={44}/>
-            <div>
-              <div style={{fontSize:15,fontWeight:800,color:C.goldLight}}>{SCHOOL_NAME}</div>
-              <div style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>{SCHOOL_ADDRESS}</div>
-            </div>
-          </div>
-          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            {[["Date",formatDate(viewLesson.date)],["Class",viewLesson.class+viewLesson.arm],["Subject",viewLesson.subject],["Period","P"+viewLesson.period],["Time",viewLesson.time],["Teacher",getTeacherName(viewLesson.teacherId)]].map(([k,v])=>(
-              <div key={k}><div style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontWeight:600}}>{k}</div><div style={{fontSize:12,color:C.goldLight,fontWeight:600}}>{v}</div></div>
-            ))}
-          </div>
-        </div>
-
-        {[
-          {label:"TOPIC",val:viewLesson.topic,bold:true},
-          {label:"SUBTOPIC",val:viewLesson.subtopic},
-          {label:"TEXTBOOK",val:viewLesson.textbook},
-          {label:"INSTRUCTIONAL MATERIALS",val:viewLesson.instructionalMaterials},
-          {label:"PREVIOUS KNOWLEDGE",val:viewLesson.previousKnowledge},
-          {label:"BEHAVIOURAL OBJECTIVES",val:viewLesson.behaviouralObjectives},
-        ].map(({label,val,bold})=>val?(
-          <div key={label} style={{marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+C.border}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:"0.06em",marginBottom:3}}>{label}</div>
-            <div style={{fontSize:12,color:C.text,fontWeight:bold?600:400,lineHeight:1.6}}>{val}</div>
-          </div>
-        ):null)}
-
-        {[viewLesson.stepOne,viewLesson.stepTwo,viewLesson.stepThree].map((step,i)=>step?.content?(
-          <div key={i} style={{marginBottom:12,background:"#F0FDF4",borderLeft:"3px solid "+C.success,borderRadius:"0 6px 6px 0",padding:"10px 14px"}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.success,marginBottom:4}}>STEP {i+1}: {step.title?.toUpperCase()}</div>
-            <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{step.content}</div>
-          </div>
-        ):null)}
-
-        {[["REVISION",viewLesson.revision],["EVALUATION",viewLesson.evaluation],["ASSIGNMENT",viewLesson.assignment]].map(([label,val])=>val?(
-          <div key={label} style={{marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+C.border}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:"0.06em",marginBottom:3}}>{label}</div>
-            <div style={{fontSize:12,color:C.text,lineHeight:1.6,whiteSpace:"pre-line"}}>{val}</div>
-          </div>
-        ):null)}
-
-        {(viewLesson.videoLinks||[]).length>0&&(
-          <div style={{marginTop:12}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:"0.06em",marginBottom:8}}>VIDEO RESOURCES</div>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              {viewLesson.videoLinks.map((v,i)=>(
-                <a key={i} href={v.url} target="_blank" rel="noopener noreferrer"
-                  style={{background:"#FEE2E2",border:"1px solid #FCA5A5",borderRadius:6,padding:"8px 12px",fontSize:11,color:"#DC2626",fontWeight:600,textDecoration:"none",...S.row,gap:6}}>
-                  ▶ {v.title}
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {(viewLesson.videoSearchSuggestions||[]).length>0&&(
-          <div style={{marginTop:12}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:"0.06em",marginBottom:8}}>SUGGESTED YOUTUBE SEARCHES (AI-generated — pick and verify a real video)</div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {viewLesson.videoSearchSuggestions.map((q,i)=>(
-                <a key={i} href={"https://www.youtube.com/results?search_query="+encodeURIComponent(q)} target="_blank" rel="noopener noreferrer"
-                  style={{background:"#EFF6FF",border:"1px solid #93C5FD",borderRadius:6,padding:"7px 11px",fontSize:11,color:"#1D4ED8",fontWeight:600,textDecoration:"none"}}>
-                  🔍 {q}
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div style={{...S.row,justifyContent:"flex-end",marginTop:16,gap:8}}>
-          <button style={{...S.btn("secondary"),fontSize:11}} onClick={()=>window.print()}>🖨 Print</button>
-          <button style={S.btn()} onClick={()=>setViewLesson(null)}>Close</button>
-        </div>
-      </div>}
-    </Modal>
-
-    {/* Create/Edit Lesson Modal */}
-    <Modal open={showForm} onClose={()=>setShowForm(false)} title={editing?"Edit Lesson Note":"New Lesson Note"} extraWide>
+  return(
+    <Modal open={open} onClose={onClose} title={lesson?"Edit Lesson Note":"New Lesson Note"} extraWide>
       <div style={{maxHeight:"70vh",overflowY:"auto",paddingRight:8}}>
         <div style={{fontWeight:700,color:C.primary,marginBottom:10,fontSize:12,borderBottom:"2px solid "+C.primary,paddingBottom:6}}>📋 LESSON DETAILS</div>
         <div style={S.grid3}>
@@ -4627,11 +4661,201 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
         </label>
       </div>
       <div style={{...S.row,justifyContent:"flex-end",marginTop:16,gap:8,borderTop:"1px solid "+C.border,paddingTop:14}}>
-        <button style={S.btn("secondary")} onClick={()=>setShowForm(false)}>Cancel</button>
-        <button style={{...S.btn("secondary")}} onClick={()=>save("Draft")}>Save as Draft</button>
-        <button style={S.btn()} onClick={()=>save("Published")}>Publish to Students</button>
+        <button style={S.btn("secondary")} onClick={onClose}>Cancel</button>
+        <button style={{...S.btn("secondary")}} onClick={()=>handleSave("Draft")}>Save as Draft</button>
+        <button style={S.btn()} onClick={()=>handleSave("Published")}>Publish to Students</button>
       </div>
     </Modal>
+  );
+}
+
+function LessonsModule({staff, students, lessons, setLessons, assignments, setAssignments, currentUser}){
+  const [tab, setTab] = useState("list");
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [editingLesson, setEditingLesson] = useState(null);
+  const [viewLesson, setViewLesson] = useState(null);
+  const [filterCls, setFilterCls] = useState("");
+  const [filterSub, setFilterSub] = useState("");
+  const lessonViewRef = useRef();
+
+  const isAdmin = currentUser.role==="root"||currentUser.role==="Admin";
+  const myStaff = staff.find(s=>s.id===currentUser.staffId||
+    (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
+
+  const filtered = lessons.filter(l=>
+    (!filterCls||l.class===filterCls) &&
+    (!filterSub||l.subject===filterSub) &&
+    (isAdmin || l.teacherId===(myStaff?.id||currentUser.staffId))
+  );
+
+  function openAdd(){
+    setEditingLesson(null);setEditing(null);setShowForm(true);
+  }
+  function openEdit(l){
+    setEditingLesson(l);setEditing(l.id);setShowForm(true);
+  }
+
+  function handleFormSave(toSave){
+    if(editing){setLessons(p=>p.map(l=>l.id===editing?{...toSave,id:editing}:l));}
+    else{setLessons(p=>[...p,{...toSave,id:genId(),createdAt:today()}]);}
+    setShowForm(false);
+  }
+
+  function createAssignment(lesson){
+    const existing = assignments.find(a=>a.lessonId===lesson.id);
+    if(existing){alert("Assignment already created for this lesson.");return;}
+    if(!lesson.assignment){alert("No assignment text in this lesson note.");return;}
+    setAssignments(p=>[...p,{
+      id:genId(),lessonId:lesson.id,teacherId:lesson.teacherId,
+      class:lesson.class,subject:lesson.subject,
+      title:lesson.topic+" — Assignment",
+      description:lesson.assignment,
+      dueDate:"",maxScore:20,status:"Active",createdAt:today()
+    }]);
+    alert("Assignment created! Students in "+lesson.class+" can now see and submit it (while submissions remain open).");
+  }
+
+  function toggleSubmission(lesson){
+    const newVal = lesson.submissionOpen===false ? true : false;
+    setLessons(p=>p.map(l=>l.id===lesson.id?{...l,submissionOpen:newVal}:l));
+    // Also reflect on the linked assignment's status
+    setAssignments(p=>p.map(a=>a.lessonId===lesson.id?{...a,status:newVal?"Active":"Closed"}:a));
+  }
+
+  function getTeacherName(id){
+    const t=staff.find(s=>s.id===id);
+    return t?t.surname+" "+t.firstname:"—";
+  }
+
+  return(<div>
+    <div style={{...S.row,marginBottom:12,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+      <div style={S.row}>
+        <select style={S.select} value={filterCls} onChange={e=>setFilterCls(e.target.value)}>
+          <option value="">All Classes</option>{CLASSES.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <select style={S.select} value={filterSub} onChange={e=>setFilterSub(e.target.value)}>
+          <option value="">All Subjects</option>{allSubjects.map(s=><option key={s}>{s}</option>)}
+        </select>
+      </div>
+      <button style={S.btn()} onClick={openAdd}><span style={S.row}><Icon name="plus" size={13}/>New Lesson Note</span></button>
+    </div>
+
+    <div style={S.card}>
+      <table style={S.table}>
+        <thead><tr>{["Date","Class","Subject","Topic","Teacher","Status","Submissions","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+        <tbody>
+          {filtered.length===0&&<tr><td colSpan={8} style={{...S.td,textAlign:"center",color:C.textMuted,padding:28}}>No lesson notes yet.</td></tr>}
+          {filtered.map(l=>{
+            const hasAssignment=assignments.some(a=>a.lessonId===l.id);
+            const submissionOpen = l.submissionOpen!==false;
+            return(<tr key={l.id}>
+              <td style={S.td}>{formatDate(l.date)}</td>
+              <td style={S.td}>{l.class}{l.arm}</td>
+              <td style={S.td}>{l.subject}</td>
+              <td style={{...S.td,fontWeight:600}}>{l.topic}{l.generationStatus==="ai-generated"&&<span style={{...S.badge("blue"),marginLeft:6,fontSize:9}}>✨ AI</span>}</td>
+              <td style={S.td}>{getTeacherName(l.teacherId)}</td>
+              <td style={S.td}><span style={S.badge(l.status==="Published"?"green":"yellow")}>{l.status}</span></td>
+              <td style={S.td}>{hasAssignment?<span style={S.badge(submissionOpen?"green":"red")}>{submissionOpen?"🟢 Open":"🔒 Closed"}</span>:<span style={{fontSize:10,color:C.textMuted}}>—</span>}</td>
+              <td style={S.td}>
+                <div style={S.row}>
+                  <button style={{...S.btn("primary"),fontSize:10,padding:"3px 7px"}} onClick={()=>setViewLesson(l)}>View</button>
+                  <button style={{...S.btn("secondary"),fontSize:10,padding:"3px 7px"}} onClick={()=>openEdit(l)}>Edit</button>
+                  {!hasAssignment&&l.assignment&&<button style={{...S.btn("gold"),fontSize:10,padding:"3px 7px"}} onClick={()=>createAssignment(l)}>📝 Create Assignment</button>}
+                  {hasAssignment&&<button style={{...S.btn(submissionOpen?"danger":"success"),fontSize:10,padding:"3px 7px"}} onClick={()=>toggleSubmission(l)}>{submissionOpen?"🔒 Close Submissions":"🟢 Open Submissions"}</button>}
+                  <button style={{...S.btn("danger"),fontSize:10,padding:"3px 7px"}} onClick={()=>{if(window.confirm("Delete?"))setLessons(p=>p.filter(x=>x.id!==l.id));}}>Del</button>
+                </div>
+              </td>
+            </tr>);
+          })}
+        </tbody>
+      </table>
+    </div>
+
+    {/* View Lesson Modal */}
+    <Modal open={!!viewLesson} onClose={()=>setViewLesson(null)} title="Lesson Note" extraWide>
+      {viewLesson&&<div ref={lessonViewRef}>
+        <div style={{background:C.primaryDark,borderRadius:8,padding:"14px 18px",marginBottom:16,color:C.white}}>
+          <div style={{...S.row,gap:12}}>
+            <SchoolLogoImg size={44}/>
+            <div>
+              <div style={{fontSize:15,fontWeight:800,color:C.goldLight}}>{SCHOOL_NAME}</div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>{SCHOOL_ADDRESS}</div>
+            </div>
+          </div>
+          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            {[["Date",formatDate(viewLesson.date)],["Class",viewLesson.class+viewLesson.arm],["Subject",viewLesson.subject],["Period","P"+viewLesson.period],["Time",viewLesson.time],["Teacher",getTeacherName(viewLesson.teacherId)]].map(([k,v])=>(
+              <div key={k}><div style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontWeight:600}}>{k}</div><div style={{fontSize:12,color:C.goldLight,fontWeight:600}}>{v}</div></div>
+            ))}
+          </div>
+        </div>
+
+        {[
+          {label:"TOPIC",val:viewLesson.topic,bold:true},
+          {label:"SUBTOPIC",val:viewLesson.subtopic},
+          {label:"TEXTBOOK",val:viewLesson.textbook},
+          {label:"INSTRUCTIONAL MATERIALS",val:viewLesson.instructionalMaterials},
+          {label:"PREVIOUS KNOWLEDGE",val:viewLesson.previousKnowledge},
+          {label:"BEHAVIOURAL OBJECTIVES",val:viewLesson.behaviouralObjectives},
+        ].map(({label,val,bold})=>val?(
+          <div key={label} style={{marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+C.border}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:"0.06em",marginBottom:3}}>{label}</div>
+            <div style={{fontSize:12,color:C.text,fontWeight:bold?600:400,lineHeight:1.6}}>{val}</div>
+          </div>
+        ):null)}
+
+        {[viewLesson.stepOne,viewLesson.stepTwo,viewLesson.stepThree].map((step,i)=>step?.content?(
+          <div key={i} style={{marginBottom:12,background:"#F0FDF4",borderLeft:"3px solid "+C.success,borderRadius:"0 6px 6px 0",padding:"10px 14px"}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.success,marginBottom:4}}>STEP {i+1}: {step.title?.toUpperCase()}</div>
+            <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{step.content}</div>
+          </div>
+        ):null)}
+
+        {[["REVISION",viewLesson.revision],["EVALUATION",viewLesson.evaluation],["ASSIGNMENT",viewLesson.assignment]].map(([label,val])=>val?(
+          <div key={label} style={{marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+C.border}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:"0.06em",marginBottom:3}}>{label}</div>
+            <div style={{fontSize:12,color:C.text,lineHeight:1.6,whiteSpace:"pre-line"}}>{val}</div>
+          </div>
+        ):null)}
+
+        {(viewLesson.videoLinks||[]).length>0&&(
+          <div style={{marginTop:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:"0.06em",marginBottom:8}}>VIDEO RESOURCES</div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              {viewLesson.videoLinks.map((v,i)=>(
+                <a key={i} href={v.url} target="_blank" rel="noopener noreferrer"
+                  style={{background:"#FEE2E2",border:"1px solid #FCA5A5",borderRadius:6,padding:"8px 12px",fontSize:11,color:"#DC2626",fontWeight:600,textDecoration:"none",...S.row,gap:6}}>
+                  ▶ {v.title}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(viewLesson.videoSearchSuggestions||[]).length>0&&(
+          <div style={{marginTop:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:"0.06em",marginBottom:8}}>SUGGESTED YOUTUBE SEARCHES (AI-generated — pick and verify a real video)</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {viewLesson.videoSearchSuggestions.map((q,i)=>(
+                <a key={i} href={"https://www.youtube.com/results?search_query="+encodeURIComponent(q)} target="_blank" rel="noopener noreferrer"
+                  style={{background:"#EFF6FF",border:"1px solid #93C5FD",borderRadius:6,padding:"7px 11px",fontSize:11,color:"#1D4ED8",fontWeight:600,textDecoration:"none"}}>
+                  🔍 {q}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{...S.row,justifyContent:"flex-end",marginTop:16,gap:8,flexWrap:"wrap"}}>
+          <button style={{...S.btn("secondary"),fontSize:11}} onClick={()=>window.print()}>🖨 Print</button>
+          <button style={{...S.btn("blue"),fontSize:11}} onClick={()=>downloadNodeAsPDF(lessonViewRef.current, viewLesson.topic+"_LessonNote").catch(e=>alert("Could not generate PDF: "+e.message))}>⬇ PDF</button>
+          <button style={{...S.btn("gold"),fontSize:11}} onClick={()=>shareNode(lessonViewRef.current, viewLesson.topic+"_LessonNote", "Lesson Note — "+viewLesson.topic).catch(e=>alert("Could not share: "+e.message))}>📤 Share</button>
+          <button style={S.btn()} onClick={()=>setViewLesson(null)}>Close</button>
+        </div>
+      </div>}
+    </Modal>
+
+    <LessonFormModal open={showForm} lesson={editingLesson} myStaff={myStaff} staff={staff} onSave={handleFormSave} onClose={()=>setShowForm(false)}/>
   </div>);
 }
 
@@ -7512,13 +7736,13 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
     };
   }
 
-  function printReport(){
+  function buildCounsellorReportHtml(){
     var repRecs = getReportSessions();
     var stats = computeStats(repRecs);
     var hdr = buildDocHeader(settings,"SCHOOL COUNSELLOR REPORT — "+repPeriod.toUpperCase()+" ("+repTerm+" "+repSess+")");
     if(!stats){
       alert("No counselling sessions found for this period.");
-      return;
+      return null;
     }
     var caseRows = stats.caseFreq.map(function(e){return '<tr><td>'+e[0]+'</td><td style="text-align:center;font-weight:700;">'+e[1]+'</td><td style="text-align:center;">'+(stats.total?Math.round(e[1]/stats.total*100)+"%" :"—")+'</td></tr>';}).join("");
     var html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Counsellor Report</title><style>'+hdr.printStyles+'.highlight{background:#F5F3FF;font-weight:700;}.section{margin-bottom:14px;}.sec-title{background:#230E6A;color:#fff;padding:5px 10px;font-weight:700;font-size:11px;margin-bottom:6px;border-radius:3px;}</style></head><body>'+hdr.headerHtml+
@@ -7543,15 +7767,31 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
       Object.entries(stats.byClass).sort(function(a,b){return b[1]-a[1];}).map(function(e){return '<tr><td>'+e[0]+'</td><td style="text-align:center;font-weight:700;">'+e[1]+'</td></tr>';}).join("")+
       '</tbody></table></div>'+
       hdr.footerHtml+'</body></html>';
-    var w=window.open("","_blank");
-    if(w){w.document.write(html);w.document.close();w.print();}
+    return html;
   }
 
-  function printClinicReport(){
+  function printReport(){
+    var html = buildCounsellorReportHtml();
+    if(html) printHtmlDoc(html);
+  }
+  async function downloadCounsellorReportPDF(){
+    var html = buildCounsellorReportHtml();
+    if(!html) return;
+    try{ await downloadHtmlDocAsPDF(html, "Counsellor_Report_"+repPeriod+"_"+repTerm+"_"+repSess); }
+    catch(e){ alert("Could not generate PDF: "+e.message); }
+  }
+  async function shareCounsellorReport(){
+    var html = buildCounsellorReportHtml();
+    if(!html) return;
+    try{ await shareHtmlDoc(html, "Counsellor_Report_"+repPeriod+"_"+repTerm+"_"+repSess, "Counsellor Report"); }
+    catch(e){ alert("Could not share: "+e.message); }
+  }
+
+  function buildClinicReportHtml(){
     var repRecs = getClinicReportSessions();
     var stats = computeClinicStats(repRecs);
     var hdr = buildDocHeader(settings,"SCHOOL CLINIC REPORT — "+repPeriod.toUpperCase()+" ("+repTerm+" "+repSess+")");
-    if(!stats){alert("No clinic records found for this period.");return;}
+    if(!stats){alert("No clinic records found for this period.");return null;}
     var html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Clinic Report</title><style>'+hdr.printStyles+'.highlight{background:#FEF2F2;font-weight:700;}.section{margin-bottom:14px;}.sec-title{background:#8B0000;color:#fff;padding:5px 10px;font-weight:700;font-size:11px;margin-bottom:6px;border-radius:3px;}</style></head><body>'+hdr.headerHtml+
       '<div style="margin-bottom:14px;"><div class="sec-title">SUMMARY STATISTICS</div>'+
       '<table><tr><th>Metric</th><th>Value</th></tr>'+
@@ -7568,8 +7808,24 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
       '<div><div class="sec-title">DRUGS DISPENSED</div><table><thead><tr><th>Drug</th><th>N</th></tr></thead><tbody>'+stats.drugFreq.map(function(e){return '<tr><td style="font-size:9px;">'+e[0]+'</td><td style="text-align:center;font-weight:700;">'+e[1]+'</td></tr>';}).join("")+'</tbody></table></div>'+
       '<div><div class="sec-title">DISPOSITIONS</div><table><thead><tr><th>Disposition</th><th>N</th></tr></thead><tbody>'+stats.dispositionFreq.map(function(e){return '<tr><td style="font-size:9px;">'+e[0]+'</td><td style="text-align:center;font-weight:700;">'+e[1]+'</td></tr>';}).join("")+'</tbody></table></div>'+
       '</div>'+hdr.footerHtml+'</body></html>';
-    var w=window.open("","_blank");
-    if(w){w.document.write(html);w.document.close();w.print();}
+    return html;
+  }
+
+  function printClinicReport(){
+    var html = buildClinicReportHtml();
+    if(html) printHtmlDoc(html);
+  }
+  async function downloadClinicReportPDF(){
+    var html = buildClinicReportHtml();
+    if(!html) return;
+    try{ await downloadHtmlDocAsPDF(html, "Clinic_Report_"+repPeriod+"_"+repTerm+"_"+repSess); }
+    catch(e){ alert("Could not generate PDF: "+e.message); }
+  }
+  async function shareClinicReport(){
+    var html = buildClinicReportHtml();
+    if(!html) return;
+    try{ await shareHtmlDoc(html, "Clinic_Report_"+repPeriod+"_"+repTerm+"_"+repSess, "Clinic Report"); }
+    catch(e){ alert("Could not share: "+e.message); }
   }
 
   // ── Render ────────────────────────────────────────
@@ -8089,9 +8345,13 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
                 {repPeriod!=="daily"&&<div style={S.formGroup}><label style={S.label}>Session</label><select style={S.select} value={repSess} onChange={function(e){setRepSess(e.target.value);}}>{SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}</select></div>}
                 {(repPeriod==="term"||repPeriod==="weekly")&&<div style={S.formGroup}><label style={S.label}>Term</label><select style={S.select} value={repTerm} onChange={function(e){setRepTerm(e.target.value);}}>{TERMS.map(function(t){return <option key={t}>{t}</option>;})}</select></div>}
               </div>
-              <div style={{display:"flex",gap:8}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 <button onClick={printReport} style={S.btn()}>🖨 Print Counsellor Report</button>
+                <button onClick={downloadCounsellorReportPDF} style={S.btn("blue")}>⬇ PDF</button>
+                <button onClick={shareCounsellorReport} style={S.btn("gold")}>📤 Share</button>
                 <button onClick={printClinicReport} style={S.btn("secondary")}>🏥 Print Clinic Report</button>
+                <button onClick={downloadClinicReportPDF} style={S.btn("blue")}>⬇ PDF</button>
+                <button onClick={shareClinicReport} style={S.btn("gold")}>📤 Share</button>
               </div>
             </div>
           </div>
@@ -9473,7 +9733,7 @@ function IDCardsModule({students, staff, settings, currentUser}){
 
   var people = cardType==="student" ? filteredStudents : filteredStaff;
 
-  function printCard(person){
+  function buildCardHtml(person){
     var isStudent = cardType==="student";
     var ac = isStudent?"#230E6A":"#6B491B";
     var al = isStudent?"#3D2496":"#8A5F26";
@@ -9547,8 +9807,17 @@ function IDCardsModule({students, staff, settings, currentUser}){
   </div>
 </div>
 </body></html>`;
-    var w = window.open("","_blank");
-    if(w){ w.document.write(html); w.document.close(); w.print(); }
+    return html;
+  }
+
+  function printCard(person){ printHtmlDoc(buildCardHtml(person)); }
+  async function downloadCardPDF(person){
+    try{ await downloadHtmlDocAsPDF(buildCardHtml(person), (person.surname||"card")+"_"+(person.firstname||"")+"_IDCard"); }
+    catch(e){ alert("Could not generate PDF: "+e.message); }
+  }
+  async function shareCard(person){
+    try{ await shareHtmlDoc(buildCardHtml(person), (person.surname||"card")+"_"+(person.firstname||"")+"_IDCard", "ID Card — "+person.surname+" "+person.firstname); }
+    catch(e){ alert("Could not share: "+e.message); }
   }
 
   function bulkPrintAll(){
@@ -9608,8 +9877,10 @@ function IDCardsModule({students, staff, settings, currentUser}){
               <div key={person.id} style={{display:"flex",flexDirection:"column",gap:8,cursor:"pointer"}} onClick={function(){setSelPerson(isSelected?null:person);}}>
                 <IDCardFront person={person} type={cardType} settings={settings}/>
                 {showBack ? <IDCardBack person={person} type={cardType} settings={settings}/> : null}
-                <div style={{display:"flex",gap:6,justifyContent:"center"}}>
+                <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap"}}>
                   <button onClick={function(e){e.stopPropagation();printCard(person);}} style={{...S.btn(),fontSize:11,padding:"4px 12px"}}>🖨 Print</button>
+                  <button onClick={function(e){e.stopPropagation();downloadCardPDF(person);}} style={{...S.btn("blue"),fontSize:11,padding:"4px 12px"}}>⬇ PDF</button>
+                  <button onClick={function(e){e.stopPropagation();shareCard(person);}} style={{...S.btn("gold"),fontSize:11,padding:"4px 12px"}}>📤 Share</button>
                   <span style={{fontSize:10,color:C.textMuted,alignSelf:"center"}}>{(person.surname+" "+person.firstname).slice(0,18)}</span>
                 </div>
               </div>
