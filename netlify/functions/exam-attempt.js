@@ -12,7 +12,7 @@ const crypto = require("crypto");
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
-const COLUMN_MAX = { ca1: 20, ca2: 20, exam: 60 };
+const DEFAULT_COLUMN_MAX = { ca1: 20, ca2: 20, exam: 60 };
 
 function corsHeaders() {
   const isProd = process.env.CONTEXT === "production";
@@ -258,7 +258,10 @@ exports.handler = async function(event, context) {
       let autoPushed = false;
 
       if (!hasTheory) {
-        const colMax = COLUMN_MAX[exam.column] || 60;
+        const settings = (await fetchRow("settings", "singleton")) || {};
+        const rc = settings.resultConfig || {};
+        const columnMax = { ca1: rc.ca1Max || DEFAULT_COLUMN_MAX.ca1, ca2: rc.ca2Max || DEFAULT_COLUMN_MAX.ca2, exam: rc.examMax || DEFAULT_COLUMN_MAX.exam };
+        const colMax = columnMax[exam.column] || 60;
         const scaledScore = (exam.totalMarks && exam.totalMarks !== colMax)
           ? Math.round((objRaw / exam.totalMarks) * colMax * 10) / 10
           : objRaw;

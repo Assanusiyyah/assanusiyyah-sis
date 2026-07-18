@@ -10,7 +10,7 @@ const ALLOWED_TABLES = [
   "students","staff","attendance","results","fees","expenditure",
   "lessons","assignments","submissions","messages","diary","gallery",
   "elibrary","conduct","settings","timetable","promotions","clinic",
-  "counselling","exams","exam_marks","admissions","school_assets"
+  "counselling","exams","exam_marks","admissions","school_assets","class_remarks"
 ];
 
 // The login screen needs to read these, unauthenticated, before anyone has

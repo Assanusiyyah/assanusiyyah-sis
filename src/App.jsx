@@ -253,6 +253,48 @@ function useIsMobile(){
   return isMobile;
 }
 
+// SchoolCalendarWidget: live clock + countdown to the next school-calendar event.
+// Shared between the staff dashboard and the Parent Portal home tab.
+function SchoolCalendarWidget({settings}){
+  var _now = useState(new Date()); var now = _now[0]; var setNow = _now[1];
+  useEffect(function(){
+    var iv = setInterval(function(){ setNow(new Date()); }, 1000);
+    return function(){ clearInterval(iv); };
+  },[]);
+
+  var events = (settings.calendarEvents||[]).filter(function(e){ return e.date >= today(); }).sort(function(a,b){ return a.date.localeCompare(b.date); });
+  var next = events[0];
+  var daysLeft = next ? Math.ceil((new Date(next.date) - new Date(today())) / 86400000) : null;
+
+  var timeStr = now.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  var dateStr = now.toLocaleDateString([], {weekday:"long", year:"numeric", month:"long", day:"numeric"});
+
+  var TYPE_COLOR = {Academic:"#1D4ED8", Exam:"#DC2626", Holiday:"#059669", Event:"#D97706", Others:"#6B7280"};
+
+  return(
+    <div style={{background:"linear-gradient(120deg,#230E6A,#3D2496)",borderRadius:12,padding:"16px 20px",marginBottom:16,color:"#fff",display:"flex",flexWrap:"wrap",gap:16,alignItems:"center",justifyContent:"space-between"}}>
+      <div>
+        <div style={{fontSize:22,fontWeight:900,fontVariantNumeric:"tabular-nums",color:"#F0C060"}}>{timeStr}</div>
+        <div style={{fontSize:11,opacity:0.85,marginTop:2}}>{dateStr}</div>
+        <div style={{fontSize:11,opacity:0.7,marginTop:2}}>{CURRENT_SESSION} · {CURRENT_TERM}</div>
+      </div>
+      {next ? (
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:11,opacity:0.8}}>Next on the school calendar</div>
+          <div style={{fontSize:14,fontWeight:800,marginTop:2}}>{next.title}</div>
+          <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginTop:4,gap:6}}>
+            <span style={{background:TYPE_COLOR[next.type]||"#6B7280",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>{next.type}</span>
+            <span style={{fontSize:12,fontWeight:700,color:"#F0C060"}}>{daysLeft===0?"Today":daysLeft===1?"Tomorrow":"in "+daysLeft+" days"}</span>
+          </div>
+          <div style={{fontSize:10,opacity:0.6,marginTop:2}}>{formatDate(next.date)}</div>
+        </div>
+      ) : (
+        <div style={{fontSize:11,opacity:0.7}}>No upcoming calendar events.</div>
+      )}
+    </div>
+  );
+}
+
 // SchoolLogoImg: renders the logo from context, or an "AS" badge if no logo uploaded yet
 function SchoolLogoImg({size=44, style={}, bg="rgba(255,255,255,0.9)", round=false}){
   const logo = useLogoSrc();
@@ -300,18 +342,6 @@ function genId() { return Math.random().toString(36).substr(2,9).toUpperCase(); 
 function admNo(yr, seq) { return `ASS/${yr}/${String(seq).padStart(4,"0")}`; }
 function today() { return new Date().toISOString().split("T")[0]; }
 function formatDate(d) { return d ? new Date(d).toLocaleDateString("en-NG",{day:"2-digit",month:"short",year:"numeric"}) : "—"; }
-function getGrade(score) {
-  if(score>=75)return{grade:"A1",remark:"Excellent",band:"A"};
-  if(score>=70)return{grade:"B2",remark:"Very Good",band:"B"};
-  if(score>=65)return{grade:"B3",remark:"Good",band:"B"};
-  if(score>=60)return{grade:"C4",remark:"Credit",band:"C"};
-  if(score>=55)return{grade:"C5",remark:"Credit",band:"C"};
-  if(score>=50)return{grade:"C6",remark:"Credit",band:"C"};
-  if(score>=45)return{grade:"D7",remark:"Pass",band:"D"};
-  if(score>=40)return{grade:"E8",remark:"Pass",band:"E"};
-  return{grade:"F9",remark:"Fail",band:"F"};
-}
-
 // ─── SMS STUB ─────────────────────────────────────────────
 // Replace sendSMS() with real Termii/Twilio API call when backend is ready
 // ══════════════════════════════════════════════════════
@@ -513,6 +543,32 @@ const SEED_EXAMS = [];
 
 const SEED_GALLERY = [];
 
+// Fallback grading scale, used whenever settings.resultConfig.gradeScale is
+// missing/empty (old persisted settings, or a fresh install). Root admin can
+// override this from Settings → Result Sheet Config.
+const DEFAULT_GRADE_SCALE = [
+  {grade:"A1",min:75,remark:"Excellent",band:"A"},
+  {grade:"B2",min:70,remark:"Very Good",band:"B"},
+  {grade:"B3",min:65,remark:"Good",band:"B"},
+  {grade:"C4",min:60,remark:"Credit",band:"C"},
+  {grade:"C5",min:55,remark:"Credit",band:"C"},
+  {grade:"C6",min:50,remark:"Credit",band:"C"},
+  {grade:"D7",min:45,remark:"Pass",band:"D"},
+  {grade:"E8",min:40,remark:"Pass",band:"E"},
+  {grade:"F9",min:0,remark:"Fail",band:"F"},
+];
+
+const DEFAULT_RESULT_CONFIG = {
+  ca1Max: 20, ca2Max: 20, examMax: 60,
+  passMark: 40,
+  gradeScale: DEFAULT_GRADE_SCALE,
+  showAffectiveTraits: true,
+  showPsychomotorSkills: true,
+  showPosition: true,
+  showClassAverage: true,
+  showComments: true,
+};
+
 const SEED_SETTINGS = {
   adminPhone: "08012345678",
   schoolLogo: "",
@@ -526,7 +582,36 @@ const SEED_SETTINGS = {
   ],
   extraClasses: [],
   extraSubjects: [],
+  resultConfig: DEFAULT_RESULT_CONFIG,
+  resultsPublished: {},
 };
+
+// Merges a possibly-stale/partial settings.resultConfig with defaults so old
+// persisted settings rows (missing new fields) never crash a report card.
+function getResultConfig(settings){
+  var rc = (settings && settings.resultConfig) || {};
+  return {
+    ca1Max: rc.ca1Max || DEFAULT_RESULT_CONFIG.ca1Max,
+    ca2Max: rc.ca2Max || DEFAULT_RESULT_CONFIG.ca2Max,
+    examMax: rc.examMax || DEFAULT_RESULT_CONFIG.examMax,
+    passMark: (rc.passMark===0||rc.passMark) ? rc.passMark : DEFAULT_RESULT_CONFIG.passMark,
+    gradeScale: (rc.gradeScale && rc.gradeScale.length) ? rc.gradeScale : DEFAULT_GRADE_SCALE,
+    showAffectiveTraits: rc.showAffectiveTraits!==false,
+    showPsychomotorSkills: rc.showPsychomotorSkills!==false,
+    showPosition: rc.showPosition!==false,
+    showClassAverage: rc.showClassAverage!==false,
+    showComments: rc.showComments!==false,
+  };
+}
+
+// Given a score and a (possibly custom) grade scale sorted by min descending,
+// returns the matching {grade,remark,band}. Falls back to the last (lowest) band.
+function getGrade(score, settings){
+  var scale = settings ? getResultConfig(settings).gradeScale : DEFAULT_GRADE_SCALE;
+  var sorted = scale.slice().sort(function(a,b){ return b.min-a.min; });
+  for(var i=0;i<sorted.length;i++){ if(score>=sorted[i].min) return sorted[i]; }
+  return sorted[sorted.length-1] || {grade:"F9",remark:"Fail",band:"F"};
+}
 // ══════════════════════════════════════════════════════
 // ALL PAGES & THEIR REQUIRED PERMISSIONS
 // ══════════════════════════════════════════════════════
@@ -674,6 +759,9 @@ function DashboardHome({students,results,fees,attendance,staff,settings,currentU
         <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginTop:4}}>{CURRENT_SESSION} · {CURRENT_TERM}</div>
       </div>
     </div>
+
+    {/* Live clock + next calendar event */}
+    <SchoolCalendarWidget settings={settings}/>
 
     {/* Birthday alert */}
     {(bday_s.length>0||bday_t.length>0)&&<div style={{...S.card,background:"linear-gradient(135deg,#FFFBEB,#FEF3C7)",border:`2px solid ${C.gold}`,marginBottom:16}}>
@@ -1065,7 +1153,8 @@ function SVGPieChart({data, size}){
   );
 }
 
-function AnalyticsModule({students, attendance, results}){
+function AnalyticsModule({students, attendance, results, settings}){
+  var rc = getResultConfig(settings);
   var _tab = useState("students");
   var tab = _tab[0]; var setTab = _tab[1];
   var _sc = useState("JSS1");
@@ -1142,7 +1231,7 @@ function AnalyticsModule({students, attendance, results}){
     var dA=sr.filter(function(r){return r.student&&r.student.boardingType==="Day";});
     var bA=sr.filter(function(r){return r.student&&r.student.boardingType==="Boarder";});
     var avg=sr.length?(sr.reduce(function(a,r){return a+r.total;},0)/sr.length).toFixed(1):null;
-    return{subject:sub,label:sub.length>10?sub.slice(0,10)+"…":sub,count:sr.length,avg:avg,highest:Math.max.apply(null,sr.map(function(r){return r.total;})),lowest:Math.min.apply(null,sr.map(function(r){return r.total;})),pass:sr.filter(function(r){return r.total>=40;}).length,fail:sr.filter(function(r){return r.total<40;}).length,maleAvg:mA.length?(mA.reduce(function(a,r){return a+r.total;},0)/mA.length).toFixed(1):null,femaleAvg:fA.length?(fA.reduce(function(a,r){return a+r.total;},0)/fA.length).toFixed(1):null,dayAvg:dA.length?(dA.reduce(function(a,r){return a+r.total;},0)/dA.length).toFixed(1):null,boarderAvg:bA.length?(bA.reduce(function(a,r){return a+r.total;},0)/bA.length).toFixed(1):null};
+    return{subject:sub,label:sub.length>10?sub.slice(0,10)+"…":sub,count:sr.length,avg:avg,highest:Math.max.apply(null,sr.map(function(r){return r.total;})),lowest:Math.min.apply(null,sr.map(function(r){return r.total;})),pass:sr.filter(function(r){return r.total>=rc.passMark;}).length,fail:sr.filter(function(r){return r.total<rc.passMark;}).length,maleAvg:mA.length?(mA.reduce(function(a,r){return a+r.total;},0)/mA.length).toFixed(1):null,femaleAvg:fA.length?(fA.reduce(function(a,r){return a+r.total;},0)/fA.length).toFixed(1):null,dayAvg:dA.length?(dA.reduce(function(a,r){return a+r.total;},0)/dA.length).toFixed(1):null,boarderAvg:bA.length?(bA.reduce(function(a,r){return a+r.total;},0)/bA.length).toFixed(1):null};
   }).filter(function(s){return s!==null;});
 
   // CLASS RESULTS
@@ -1154,8 +1243,8 @@ function AnalyticsModule({students, attendance, results}){
     var mA=savgs.filter(function(s){return s.student.gender==="Male";}); var fA=savgs.filter(function(s){return s.student.gender==="Female";});
     var dA=savgs.filter(function(s){return s.student.boardingType==="Day";}); var bA=savgs.filter(function(s){return s.student.boardingType==="Boarder";});
     var gb={A1:0,B2:0,B3:0,C4:0,C5:0,C6:0,D7:0,E8:0,F9:0};
-    cr.forEach(function(r){var g=getGrade(r.total).grade;if(gb[g]!==undefined)gb[g]++;});
-    return{cls:cls,label:cls,enrolled:cs.length,withResults:savgs.length,classAvg:cavg,passRate:savgs.length?Math.round(savgs.filter(function(s){return s.avg>=40;}).length/savgs.length*100):null,maleAvg:mA.length?(mA.reduce(function(a,s){return a+s.avg;},0)/mA.length).toFixed(1):null,femaleAvg:fA.length?(fA.reduce(function(a,s){return a+s.avg;},0)/fA.length).toFixed(1):null,dayAvg:dA.length?(dA.reduce(function(a,s){return a+s.avg;},0)/dA.length).toFixed(1):null,boarderAvg:bA.length?(bA.reduce(function(a,s){return a+s.avg;},0)/bA.length).toFixed(1):null,gradeBreakdown:gb};
+    cr.forEach(function(r){var g=getGrade(r.total,settings).grade;if(gb[g]!==undefined)gb[g]++;});
+    return{cls:cls,label:cls,enrolled:cs.length,withResults:savgs.length,classAvg:cavg,passRate:savgs.length?Math.round(savgs.filter(function(s){return s.avg>=rc.passMark;}).length/savgs.length*100):null,maleAvg:mA.length?(mA.reduce(function(a,s){return a+s.avg;},0)/mA.length).toFixed(1):null,femaleAvg:fA.length?(fA.reduce(function(a,s){return a+s.avg;},0)/fA.length).toFixed(1):null,dayAvg:dA.length?(dA.reduce(function(a,s){return a+s.avg;},0)/dA.length).toFixed(1):null,boarderAvg:bA.length?(bA.reduce(function(a,s){return a+s.avg;},0)/bA.length).toFixed(1):null,gradeBreakdown:gb};
   });
 
   var classAvgData=classResultsOverall.filter(function(c){return c.classAvg;}).map(function(c){return{label:c.cls,overall:parseFloat(c.classAvg)||0,male:parseFloat(c.maleAvg)||0,female:parseFloat(c.femaleAvg)||0,day:parseFloat(c.dayAvg)||0,boarder:parseFloat(c.boarderAvg)||0};});
@@ -2214,7 +2303,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
 }
 
 
-function ResultsModule({students, results, setResults, settings, staff, currentUser}){
+function ResultsModule({students, results, setResults, settings, staff, currentUser, classRemarks, setClassRemarks, assignments, setAssignments}){
   var _tab = useState("entry"); var tab = _tab[0]; var setTab = _tab[1];
   var _selClass = useState("JSS1"); var selClass = _selClass[0]; var setSelClass = _selClass[1];
   var _selArm = useState("A"); var selArm = _selArm[0]; var setSelArm = _selArm[1];
@@ -2225,11 +2314,17 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
   var _saved = useState(false); var saved = _saved[0]; var setSaved = _saved[1];
   var _nextTerm = useState(""); var nextTerm = _nextTerm[0]; var setNextTerm = _nextTerm[1];
   var _daysOpened = useState(""); var daysOpened = _daysOpened[0]; var setDaysOpened = _daysOpened[1];
+  var _showRemedial = useState(false); var showRemedial = _showRemedial[0]; var setShowRemedial = _showRemedial[1];
+  var _remedialAsnId = useState(""); var remedialAsnId = _remedialAsnId[0]; var setRemedialAsnId = _remedialAsnId[1];
 
   var isAdmin = currentUser.role==="root"||currentUser.role==="admin"||currentUser.role==="Admin";
   var ARMS = ["A","B","C","D","E"];
   var subjects = getSubjects(selClass);
   if(selSub==="") { var firstSub = subjects[0]||""; }
+  var rc = getResultConfig(settings);
+  var myStaffRec = staff.find(function(s){ return (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase(); });
+  var isPrincipal = isAdmin || (myStaffRec && String(myStaffRec.role||"").toLowerCase().indexOf("principal")!==-1);
+  function isClassTeacherOf(cls){ return isAdmin || (myStaffRec && (myStaffRec.classes||[]).includes(cls)); }
 
   // Class students
   var classStudents = students.filter(function(s){
@@ -2244,9 +2339,29 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
     });
   }
 
+  // ── Below-pass-mark students for a subject, for the "assign remedial work" tool ──
+  function getBelowPassMarkStudents(subject){
+    return classStudents.filter(function(stu){
+      var r = getResult(stu.id, subject);
+      return r && (r.total||0) < rc.passMark;
+    });
+  }
+
+  function assignRemedial(subject, assignmentId, belowIds){
+    setAssignments(function(p){ return p.map(function(a){
+      if(a.id!==assignmentId) return a;
+      var merged = Array.from(new Set([...(a.targetStudentIds||[]), ...belowIds]));
+      return {...a, targetStudentIds:merged};
+    });});
+    setShowRemedial(false);
+    setRemedialAsnId("");
+    alert("Assigned to "+belowIds.length+" below-pass-mark student(s).");
+  }
+
   // Save/update a score field
   function setScore(studentId, subject, field, value){
-    var val = Math.min(parseInt(value)||0, field==="exam"?60:20);
+    var fieldMax = field==="exam"?rc.examMax:field==="ca1"?rc.ca1Max:rc.ca2Max;
+    var val = Math.min(parseInt(value)||0, fieldMax);
     var existing = getResult(studentId, subject);
     if(existing){
       setResults(function(p){ return p.map(function(r){
@@ -2402,23 +2517,50 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
     return sr || {};
   }
 
+  // ── General class remark (not tied to a specific student) ─────
+  function getClassRemark(cls, arm, sess, term){
+    var s = sess||selSess, t = term||selTerm;
+    return (classRemarks||[]).find(function(cr){
+      return cr.class===cls && cr.arm===arm && cr.session===s && cr.term===t;
+    }) || {teacherRemark:"", principalRemark:""};
+  }
+
+  function setClassRemarkField(field, value){
+    var existing = (classRemarks||[]).find(function(cr){
+      return cr.class===selClass && cr.arm===selArm && cr.session===selSess && cr.term===selTerm;
+    });
+    if(existing){
+      setClassRemarks(function(p){ return p.map(function(cr){
+        return cr.id===existing.id ? {...cr, [field]:value, updatedBy:currentUser.name, updatedAt:today()} : cr;
+      });});
+    } else {
+      setClassRemarks(function(p){ return [...p, {
+        id:genId(), class:selClass, arm:selArm, session:selSess, term:selTerm,
+        teacherRemark:"", principalRemark:"", [field]:value,
+        updatedBy:currentUser.name, updatedAt:today()
+      }];});
+    }
+  }
+
   // ── PRINT SINGLE REPORT CARD ──────────────────────
   function printReportCard(student){
     var stats = getStudentStats(student.id);
     var meta = getStudentMeta(student.id);
+    var classRemark = getClassRemark(student.class, student.arm||selArm, selSess, selTerm);
     var stuResults = results.filter(function(r){
       return r.studentId===student.id && r.session===selSess && r.term===selTerm && r.class===selClass;
     });
     var logo = settings&&settings.schoolLogo ? settings.schoolLogo : "";
     var stamp = settings&&settings.schoolStamp ? settings.schoolStamp : "";
     var sig = settings&&settings.signature ? settings.signature : "";
+    var totalMax = rc.ca1Max+rc.ca2Max+rc.examMax;
 
     var subjectRows = subjects.map(function(sub){
       var r = stuResults.find(function(x){return x.subject===sub;});
       if(!r) return null;
       var stats2 = getSubjectStats(sub);
       var pos = getSubjectPosition(student.id, sub);
-      var grade = getGrade(r.total||0);
+      var grade = getGrade(r.total||0, settings);
       var weighted = getWeightedScore(r.total||0, stats2.highest);
       return {sub,r,stats2,pos,grade,weighted};
     }).filter(Boolean);
@@ -2498,15 +2640,15 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
 
   <div class="stats-box">
     <div class="stats-col">
-      <div class="stats-item"><span class="stats-label">Position in entire class</span><span class="stats-value">${stats ? ordinal(stats.position) : "-"}</span></div>
+      ${rc.showPosition?`<div class="stats-item"><span class="stats-label">Position in entire class</span><span class="stats-value">${stats ? ordinal(stats.position) : "-"}</span></div>`:""}
       <div class="stats-item"><span class="stats-label">Overall total score</span><span class="stats-value">${stats ? stats.totalScore : "-"}</span></div>
       <div class="stats-item"><span class="stats-label">Student's average score</span><span class="stats-value">${stats ? stats.avg : "-"}</span></div>
-      <div class="stats-item"><span class="stats-label">Highest average in class</span><span class="stats-value">${stats ? stats.classHighest : "-"}</span></div>
+      ${rc.showClassAverage?`<div class="stats-item"><span class="stats-label">Highest average in class</span><span class="stats-value">${stats ? stats.classHighest : "-"}</span></div>`:""}
     </div>
     <div class="stats-col">
       <div class="stats-item"><span class="stats-label">No. of students in class</span><span class="stats-value">${classStudents.length}</span></div>
-      <div class="stats-item"><span class="stats-label">Class average score</span><span class="stats-value">${stats ? stats.classAvg : "-"}</span></div>
-      <div class="stats-item"><span class="stats-label">Lowest average in class</span><span class="stats-value">${stats ? stats.classLowest : "-"}</span></div>
+      ${rc.showClassAverage?`<div class="stats-item"><span class="stats-label">Class average score</span><span class="stats-value">${stats ? stats.classAvg : "-"}</span></div>
+      <div class="stats-item"><span class="stats-label">Lowest average in class</span><span class="stats-value">${stats ? stats.classLowest : "-"}</span></div>`:""}
       <div class="stats-item"><span class="stats-label">No. of days school opened</span><span class="stats-value">${daysOpened||"-"}</span></div>
     </div>
   </div>
@@ -2515,16 +2657,13 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
     <thead>
       <tr>
         <th style="text-align:left;min-width:100px;">SUBJECT</th>
-        <th>TEST 1<br/>(20)</th>
-        <th>TEST 2<br/>(20)</th>
-        <th>EXAM<br/>(60)</th>
-        <th>TOTAL<br/>(100)</th>
+        <th>TEST 1<br/>(${rc.ca1Max})</th>
+        <th>TEST 2<br/>(${rc.ca2Max})</th>
+        <th>EXAM<br/>(${rc.examMax})</th>
+        <th>TOTAL<br/>(${totalMax})</th>
         <th>GRADE</th>
-        <th>SUBJECT<br/>POSITION</th>
-        <th>CLASS<br/>AVERAGE</th>
-        <th>WEIGHTED<br/>SCORE</th>
-        <th>HIGHEST<br/>IN CLASS</th>
-        <th>LOWEST<br/>IN CLASS</th>
+        ${rc.showPosition?"<th>SUBJECT<br/>POSITION</th>":""}
+        ${rc.showClassAverage?"<th>CLASS<br/>AVERAGE</th><th>WEIGHTED<br/>SCORE</th><th>HIGHEST<br/>IN CLASS</th><th>LOWEST<br/>IN CLASS</th>":""}
         <th>REMARK</th>
       </tr>
     </thead>
@@ -2538,19 +2677,16 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
           <td>${row.r.exam||"-"}</td>
           <td style="font-weight:700;">${row.r.total||"-"}</td>
           <td class="${gc}">${row.grade.grade}</td>
-          <td>${ordinal(row.pos)}</td>
-          <td>${row.stats2.avg}</td>
-          <td>${row.weighted}</td>
-          <td style="color:#006600;font-weight:700;">${row.stats2.highest}</td>
-          <td style="color:#800000;font-weight:700;">${row.stats2.lowest}</td>
+          ${rc.showPosition?`<td>${ordinal(row.pos)}</td>`:""}
+          ${rc.showClassAverage?`<td>${row.stats2.avg}</td><td>${row.weighted}</td><td style="color:#006600;font-weight:700;">${row.stats2.highest}</td><td style="color:#800000;font-weight:700;">${row.stats2.lowest}</td>`:""}
           <td style="color:${row.r.total>=70?"#006600":row.r.total>=50?"#806000":"#800000"};font-weight:600;">${row.grade.remark}</td>
         </tr>`;
       }).join("")}
     </tbody>
   </table>
 
-  <div class="bottom-section">
-    <div>
+  ${(rc.showAffectiveTraits||rc.showPsychomotorSkills)?`<div class="bottom-section">
+    ${rc.showAffectiveTraits?`<div>
       <div class="affective-box" style="margin-bottom:4px;">
         <div class="affective-header">AFFECTIVE TRAITS</div>
         ${AFFECTIVE_TRAITS.slice(0,8).map(function(t){
@@ -2565,15 +2701,15 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
           return `<div class="affective-row"><span>${t}</span><span style="font-weight:700;">${rating}</span></div>`;
         }).join("")}
       </div>
-    </div>
+    </div>`:""}
     <div>
-      <div class="affective-box" style="margin-bottom:4px;">
+      ${rc.showPsychomotorSkills?`<div class="affective-box" style="margin-bottom:4px;">
         <div class="affective-header">PSYCHOMOTOR SKILLS</div>
         ${PSYCHOMOTOR_SKILLS.map(function(t){
           var rating = (meta.psychomotorSkills||{})[t]||"";
           return `<div class="affective-row"><span>${t}</span><span style="font-weight:700;">${rating}</span></div>`;
         }).join("")}
-      </div>
+      </div>`:""}
       <div class="score-range-box">
         <div class="affective-header">SCORE RANGE</div>
         ${[["0%-30%","F","Fail"],["30%-40%","E","Poor"],["40%-50%","D","Pass"],["50%-60%","C","Good"],["60%-70%","B","Very good"],["70%-100%","A","Excellent"]].map(function(row){
@@ -2589,16 +2725,18 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
         }).join("")}
       </div>
     </div>
-  </div>
+  </div>`:""}
 
-  <div class="comment-section">
+  ${rc.showComments?`<div class="comment-section">
     <div class="comment-label">Class Teacher's comment:</div>
     <div class="comment-box">${meta.teacherComment||""}</div>
     <div class="comment-label">Form Master's report:</div>
     <div class="comment-box">${meta.formMasterComment||""}</div>
     <div class="comment-label">Principal's report:</div>
     <div class="comment-box">${meta.principalComment||""}</div>
-  </div>
+    ${classRemark.teacherRemark?`<div class="comment-label">Class Teacher's General Remark (whole class):</div><div class="comment-box">${classRemark.teacherRemark}</div>`:""}
+    ${classRemark.principalRemark?`<div class="comment-label">Principal's General Remark (whole class):</div><div class="comment-box">${classRemark.principalRemark}</div>`:""}
+  </div>`:""}
 
   <div class="signature-row">
     <div class="sig-box">
@@ -2697,6 +2835,23 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
           </div>
         </div>
 
+        {/* Below-pass-mark / remedial assignment */}
+        {(function(){
+          var below = getBelowPassMarkStudents(currentSub);
+          if(!below.length) return null;
+          return(
+            <div style={{...S.card,marginBottom:14,background:"#FEF2F2",border:"1px solid "+C.danger}}>
+              <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.danger}}>⚠ {below.length} student(s) below pass mark ({rc.passMark}) in {currentSub}</div>
+                  <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{below.map(function(s){return s.surname+" "+s.firstname;}).join(", ")}</div>
+                </div>
+                <button style={S.btn("danger")} onClick={function(){setShowRemedial(true);}}>🎯 Assign Remedial Work</button>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Score entry grid */}
         {classStudents.length===0 ? (
           <div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No active students in {selClass}{selArm}. Enrol students first.</div>
@@ -2711,9 +2866,9 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                 <thead>
                   <tr>
                     <th style={{...S.th,textAlign:"left",minWidth:140}}>Student Name</th>
-                    <th style={{...S.thC,minWidth:70}}>CA1 (20)</th>
-                    <th style={{...S.thC,minWidth:70}}>CA2 (20)</th>
-                    <th style={{...S.thC,minWidth:70}}>Exam (60)</th>
+                    <th style={{...S.thC,minWidth:70}}>CA1 ({rc.ca1Max})</th>
+                    <th style={{...S.thC,minWidth:70}}>CA2 ({rc.ca2Max})</th>
+                    <th style={{...S.thC,minWidth:70}}>Exam ({rc.examMax})</th>
                     <th style={{...S.thC,minWidth:70}}>Total</th>
                     <th style={{...S.thC,minWidth:60}}>Grade</th>
                     <th style={{...S.thC,minWidth:60}}>Position</th>
@@ -2723,30 +2878,30 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                   {classStudents.map(function(stu){
                     var r = getResult(stu.id, currentSub);
                     var total = r ? (r.total||0) : 0;
-                    var grade = getGrade(total);
+                    var grade = getGrade(total, settings);
                     var pos = r ? getSubjectPosition(stu.id, currentSub) : "-";
                     return(
                       <tr key={stu.id}>
                         <td style={{...S.td,fontWeight:600}}>{stu.surname} {stu.firstname}</td>
                         <td style={S.tdC}>
-                          <input type="number" min="0" max="20" style={{...S.input,width:56,textAlign:"center",padding:"3px"}}
+                          <input type="number" min="0" max={rc.ca1Max} style={{...S.input,width:56,textAlign:"center",padding:"3px"}}
                             value={r?r.ca1:""}
                             onChange={function(e){setScore(stu.id,currentSub,"ca1",e.target.value);setSaved(true);setTimeout(function(){setSaved(false);},2000);}}
                             placeholder="0"/>
                         </td>
                         <td style={S.tdC}>
-                          <input type="number" min="0" max="20" style={{...S.input,width:56,textAlign:"center",padding:"3px"}}
+                          <input type="number" min="0" max={rc.ca2Max} style={{...S.input,width:56,textAlign:"center",padding:"3px"}}
                             value={r?r.ca2:""}
                             onChange={function(e){setScore(stu.id,currentSub,"ca2",e.target.value);setSaved(true);setTimeout(function(){setSaved(false);},2000);}}
                             placeholder="0"/>
                         </td>
                         <td style={S.tdC}>
-                          <input type="number" min="0" max="60" style={{...S.input,width:56,textAlign:"center",padding:"3px"}}
+                          <input type="number" min="0" max={rc.examMax} style={{...S.input,width:56,textAlign:"center",padding:"3px"}}
                             value={r?r.exam:""}
                             onChange={function(e){setScore(stu.id,currentSub,"exam",e.target.value);setSaved(true);setTimeout(function(){setSaved(false);},2000);}}
                             placeholder="0"/>
                         </td>
-                        <td style={{...S.tdC,fontWeight:700,fontSize:13,color:total>=40?C.success:C.danger}}>{total||"-"}</td>
+                        <td style={{...S.tdC,fontWeight:700,fontSize:13,color:total>=rc.passMark?C.success:C.danger}}>{total||"-"}</td>
                         <td style={S.tdC}><span style={S.badge(total>=70?"green":total>=50?"yellow":"red")}>{r?grade.grade:"-"}</span></td>
                         <td style={{...S.tdC,fontWeight:600}}>{ordinal(pos)}</td>
                       </tr>
@@ -2801,6 +2956,38 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
           </div>
         </div>
 
+        {/* General class remark — not tied to any one student, printed on every report card for this class/arm/term */}
+        {(function(){
+          var cr = getClassRemark(selClass, selArm);
+          var canTeacher = isClassTeacherOf(selClass);
+          return(
+            <div style={{...S.card,marginBottom:14}}>
+              <div style={S.cardTitle}>General Remark for {selClass}{selArm} — {selTerm} {selSess}</div>
+              <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>A class-wide remark (not about any one student) that prints on every report card for this class.</div>
+              <div style={S.grid2}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Class Teacher's General Remark</div>
+                  {canTeacher?(
+                    <textarea style={{...S.textarea,minHeight:60}} defaultValue={cr.teacherRemark} key={selClass+selArm+selSess+selTerm+"_t"}
+                      onBlur={function(e){ if(e.target.value!==cr.teacherRemark) setClassRemarkField("teacherRemark", e.target.value); }}/>
+                  ):(
+                    <div style={{...S.textarea,minHeight:60,background:"#F9FAFB",color:cr.teacherRemark?C.text:C.textMuted}}>{cr.teacherRemark||"— no permission to edit —"}</div>
+                  )}
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Principal's General Remark</div>
+                  {isPrincipal?(
+                    <textarea style={{...S.textarea,minHeight:60}} defaultValue={cr.principalRemark} key={selClass+selArm+selSess+selTerm+"_p"}
+                      onBlur={function(e){ if(e.target.value!==cr.principalRemark) setClassRemarkField("principalRemark", e.target.value); }}/>
+                  ):(
+                    <div style={{...S.textarea,minHeight:60,background:"#F9FAFB",color:cr.principalRemark?C.text:C.textMuted}}>{cr.principalRemark||"— no permission to edit —"}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         <div style={{...S.card,overflowX:"auto"}}>
           <table style={S.table}>
             <thead>
@@ -2823,7 +3010,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                       var r = getResult(stu.id, sub);
                       var total = r ? (r.total||0) : null;
                       return(
-                        <td key={sub} style={{...S.tdC,color:total===null?C.textMuted:total>=40?C.success:C.danger,fontWeight:total!==null?700:400}}>
+                        <td key={sub} style={{...S.tdC,color:total===null?C.textMuted:total>=rc.passMark?C.success:C.danger,fontWeight:total!==null?700:400}}>
                           {total===null?"—":total}
                         </td>
                       );
@@ -2860,6 +3047,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
 
     var stats = getStudentStats(stu.id);
     var meta = getStudentMeta(stu.id);
+    var classRemark = getClassRemark(stu.class, stu.arm||selArm, selSess, selTerm);
     var stuResults = results.filter(function(r){
       return r.studentId===stu.id && r.session===selSess && r.term===selTerm && r.class===selClass;
     });
@@ -2919,12 +3107,21 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
           {/* Stats */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",border:"1px solid #8B0000",marginBottom:6,fontSize:9.5}}>
             <div style={{padding:"4px 6px",borderRight:"1px solid #8B0000"}}>
-              {[["Position in class",stats?ordinal(stats.position):"-"],["Overall total score",stats?stats.totalScore:"-"],["Student average score",stats?stats.avg:"-"],["Highest avg in class",stats?stats.classHighest:"-"]].map(function(item,i){
+              {[
+                ...(rc.showPosition?[["Position in class",stats?ordinal(stats.position):"-"]]:[]),
+                ["Overall total score",stats?stats.totalScore:"-"],
+                ["Student average score",stats?stats.avg:"-"],
+                ...(rc.showClassAverage?[["Highest avg in class",stats?stats.classHighest:"-"]]:[]),
+              ].map(function(item,i){
                 return <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"1px 0",borderBottom:"1px solid #eee"}}><span>{item[0]}</span><b style={{color:"#8B0000"}}>{item[1]}</b></div>;
               })}
             </div>
             <div style={{padding:"4px 6px"}}>
-              {[["No. of students in class",classStudents.length],["Class average score",stats?stats.classAvg:"-"],["Lowest avg in class",stats?stats.classLowest:"-"],["Days school opened",daysOpened||"-"]].map(function(item,i){
+              {[
+                ["No. of students in class",classStudents.length],
+                ...(rc.showClassAverage?[["Class average score",stats?stats.classAvg:"-"],["Lowest avg in class",stats?stats.classLowest:"-"]]:[]),
+                ["Days school opened",daysOpened||"-"],
+              ].map(function(item,i){
                 return <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"1px 0",borderBottom:"1px solid #eee"}}><span>{item[0]}</span><b style={{color:"#8B0000"}}>{item[1]}</b></div>;
               })}
             </div>
@@ -2934,7 +3131,12 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
           <table style={{width:"100%",borderCollapse:"collapse",marginBottom:6,fontSize:9}}>
             <thead>
               <tr style={{background:"#8B0000",color:"#fff"}}>
-                {["SUBJECT","TEST 1\n(20)","TEST 2\n(20)","EXAM\n(60)","TOTAL\n(100)","GRADE","SUBJECT\nPOSITION","CLASS\nAVERAGE","WEIGHTED\nSCORE","HIGHEST\nIN CLASS","LOWEST\nIN CLASS","REMARK"].map(function(h){
+                {[
+                  "SUBJECT","TEST 1\n("+rc.ca1Max+")","TEST 2\n("+rc.ca2Max+")","EXAM\n("+rc.examMax+")","TOTAL\n("+(rc.ca1Max+rc.ca2Max+rc.examMax)+")","GRADE",
+                  ...(rc.showPosition?["SUBJECT\nPOSITION"]:[]),
+                  ...(rc.showClassAverage?["CLASS\nAVERAGE","WEIGHTED\nSCORE","HIGHEST\nIN CLASS","LOWEST\nIN CLASS"]:[]),
+                  "REMARK"
+                ].map(function(h){
                   return <th key={h} style={{padding:"3px",border:"1px solid #8B0000",textAlign:"center",fontSize:8,whiteSpace:"pre-line"}}>{h}</th>;
                 })}
               </tr>
@@ -2945,7 +3147,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                 if(!r) return null;
                 var subStats = getSubjectStats(sub);
                 var pos = getSubjectPosition(stu.id, sub);
-                var grade = getGrade(r.total||0);
+                var grade = getGrade(r.total||0, settings);
                 var weighted = getWeightedScore(r.total||0, subStats.highest);
                 return(
                   <tr key={sub} style={{borderBottom:"1px solid #ccc"}}>
@@ -2955,11 +3157,13 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                     <td style={{padding:"2px",textAlign:"center"}}>{r.exam||"-"}</td>
                     <td style={{padding:"2px",textAlign:"center",fontWeight:700}}>{r.total||"-"}</td>
                     <td style={{padding:"2px",textAlign:"center",fontWeight:700,color:r.total>=70?"#006600":r.total>=50?"#806000":"#800000"}}>{grade.grade}</td>
-                    <td style={{padding:"2px",textAlign:"center"}}>{ordinal(pos)}</td>
-                    <td style={{padding:"2px",textAlign:"center"}}>{subStats.avg}</td>
-                    <td style={{padding:"2px",textAlign:"center"}}>{weighted}</td>
-                    <td style={{padding:"2px",textAlign:"center",color:"#006600",fontWeight:700}}>{subStats.highest}</td>
-                    <td style={{padding:"2px",textAlign:"center",color:"#800000",fontWeight:700}}>{subStats.lowest}</td>
+                    {rc.showPosition&&<td style={{padding:"2px",textAlign:"center"}}>{ordinal(pos)}</td>}
+                    {rc.showClassAverage&&<>
+                      <td style={{padding:"2px",textAlign:"center"}}>{subStats.avg}</td>
+                      <td style={{padding:"2px",textAlign:"center"}}>{weighted}</td>
+                      <td style={{padding:"2px",textAlign:"center",color:"#006600",fontWeight:700}}>{subStats.highest}</td>
+                      <td style={{padding:"2px",textAlign:"center",color:"#800000",fontWeight:700}}>{subStats.lowest}</td>
+                    </>}
                     <td style={{padding:"2px",textAlign:"center",fontSize:8,color:r.total>=70?"#006600":r.total>=50?"#806000":"#800000",fontWeight:600}}>{grade.remark}</td>
                   </tr>
                 );
@@ -2970,7 +3174,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
           {/* Bottom section */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8,fontSize:8.5}}>
             {/* Affective traits */}
-            <div>
+            {rc.showAffectiveTraits&&<div>
               <div style={{background:"#8B0000",color:"#fff",padding:"2px 4px",fontWeight:700,fontSize:8}}>AFFECTIVE TRAITS</div>
               {AFFECTIVE_TRAITS.map(function(t){
                 var rating = (meta.affectiveTraits||{})[t]||"";
@@ -2984,12 +3188,12 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                   </div>
                 );
               })}
-            </div>
+            </div>}
 
             {/* Psychomotor + Score Range */}
             <div>
-              <div style={{background:"#8B0000",color:"#fff",padding:"2px 4px",fontWeight:700,fontSize:8}}>PSYCHOMOTOR SKILLS</div>
-              {PSYCHOMOTOR_SKILLS.map(function(t){
+              {rc.showPsychomotorSkills&&<div style={{background:"#8B0000",color:"#fff",padding:"2px 4px",fontWeight:700,fontSize:8}}>PSYCHOMOTOR SKILLS</div>}
+              {rc.showPsychomotorSkills&&PSYCHOMOTOR_SKILLS.map(function(t){
                 var rating = (meta.psychomotorSkills||{})[t]||"";
                 return(
                   <div key={t} style={{display:"flex",justifyContent:"space-between",padding:"1px 4px",borderBottom:"1px solid #eee"}}>
@@ -3017,17 +3221,24 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
           </div>
 
           {/* Comments */}
-          <div style={{marginBottom:8}}>
-            {[["teacherComment","Class Teacher's comment:"],["formMasterComment","Form Master's report:"],["principalComment","Principal's report:"]].map(function(pair){
+          {rc.showComments&&<div style={{marginBottom:8}}>
+            {[["teacherComment","Class Teacher's comment:",isClassTeacherOf(stu.class)],["formMasterComment","Form Master's report:",isClassTeacherOf(stu.class)],["principalComment","Principal's report:",isPrincipal]].map(function(trip){
+              var field=trip[0], label=trip[1], canEdit=trip[2];
               return(
-                <div key={pair[0]} style={{marginBottom:4}}>
-                  <div style={{fontSize:9,fontWeight:700}}>{pair[1]}</div>
-                  <textarea value={meta[pair[0]]||""} onChange={function(e){setComment(stu.id,pair[0],e.target.value);}}
-                    style={{width:"100%",border:"1px solid #ccc",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,resize:"vertical",fontFamily:"Arial"}}/>
+                <div key={field} style={{marginBottom:4}}>
+                  <div style={{fontSize:9,fontWeight:700}}>{label}</div>
+                  {canEdit?(
+                    <textarea value={meta[field]||""} onChange={function(e){setComment(stu.id,field,e.target.value);}}
+                      style={{width:"100%",border:"1px solid #ccc",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,resize:"vertical",fontFamily:"Arial"}}/>
+                  ):(
+                    <div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB",color:meta[field]?C.text:C.textMuted}}>{meta[field]||"— no permission to edit this field —"}</div>
+                  )}
                 </div>
               );
             })}
-          </div>
+            {classRemark.teacherRemark&&<div style={{marginBottom:4}}><div style={{fontSize:9,fontWeight:700}}>Class Teacher's General Remark (whole class):</div><div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB"}}>{classRemark.teacherRemark}</div></div>}
+            {classRemark.principalRemark&&<div style={{marginBottom:4}}><div style={{fontSize:9,fontWeight:700}}>Principal's General Remark (whole class):</div><div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB"}}>{classRemark.principalRemark}</div></div>}
+          </div>}
 
           {/* Signatures */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginTop:8}}>
@@ -3055,6 +3266,37 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
       {tab==="entry" ? renderEntry() : null}
       {tab==="broadsheet" ? renderBroadsheet() : null}
       {tab==="card" ? renderCard() : null}
+
+      {/* Assign remedial work to below-pass-mark students */}
+      {(function(){
+        var currentSub = selSub || subjects[0] || "";
+        var below = getBelowPassMarkStudents(currentSub);
+        var candidateAssignments = (assignments||[]).filter(function(a){ return a.class===selClass && a.subject===currentSub; });
+        return(
+          <Modal open={showRemedial} onClose={function(){setShowRemedial(false);setRemedialAsnId("");}} title={"Assign Remedial Work — "+currentSub+" — "+selClass+selArm}>
+            <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>{below.length} student(s) scored below {rc.passMark} in {currentSub}: {below.map(function(s){return s.surname+" "+s.firstname;}).join(", ")}</div>
+            {candidateAssignments.length===0?(
+              <div style={{...S.card,textAlign:"center",color:C.textMuted,padding:20}}>
+                No assignment exists yet for {currentSub} in {selClass}. Create one first from Lesson Notes → publish a lesson with an assignment for this class/subject, then come back here.
+              </div>
+            ):(
+              <div>
+                <div style={S.formGroup}>
+                  <label style={S.label}>Choose an assignment to target at these students</label>
+                  <select style={{...S.select,width:"100%"}} value={remedialAsnId} onChange={function(e){setRemedialAsnId(e.target.value);}}>
+                    <option value="">— Select assignment —</option>
+                    {candidateAssignments.map(function(a){return <option key={a.id} value={a.id}>{a.title}{a.targetStudentIds&&a.targetStudentIds.length?" (already targeted to "+a.targetStudentIds.length+")":""}</option>;})}
+                  </select>
+                </div>
+                <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}>
+                  <button style={S.btn("secondary")} onClick={function(){setShowRemedial(false);setRemedialAsnId("");}}>Cancel</button>
+                  <button style={S.btn("danger")} disabled={!remedialAsnId} onClick={function(){assignRemedial(currentSub, remedialAsnId, below.map(function(s){return s.id;}));}}>Assign to {below.length} Student(s)</button>
+                </div>
+              </div>
+            )}
+          </Modal>
+        );
+      })()}
     </div>
   );
 }
@@ -3090,7 +3332,7 @@ function StaffFormModal({open,staffMember,onSave,onClose}){
     <Modal open={open} onClose={onClose} title={staffMember?"Edit Staff Record":"Add Staff Member"} wide>
       <div style={S.grid3}><FormField form={form} setForm={setForm} label="Surname *" field="surname"/><FormField form={form} setForm={setForm} label="First Name *" field="firstname"/><FormField form={form} setForm={setForm} label="Middle Name" field="middlename"/></div>
       <div style={S.grid3}><FormField form={form} setForm={setForm} label="Date of Birth" field="dob" type="date"/><FormField form={form} setForm={setForm} label="Gender" field="gender" opts={["Male","Female"]}/><FormField form={form} setForm={setForm} label="Phone" field="phone"/></div>
-      <div style={S.grid2}><FormField form={form} setForm={setForm} label="Highest Qualification" field="qualification"/><FormField form={form} setForm={setForm} label="Role" field="role" opts={["Teacher","Admin","Bursar","Others"]}/></div>
+      <div style={S.grid2}><FormField form={form} setForm={setForm} label="Highest Qualification" field="qualification"/><FormField form={form} setForm={setForm} label="Role" field="role" opts={["Teacher","Principal","Admin","Bursar","Others"]}/></div>
       <div style={S.grid2}><FormField form={form} setForm={setForm} label="Next of Kin" field="nextOfKin"/><FormField form={form} setForm={setForm} label="Next of Kin Phone" field="nextOfKinPhone"/></div>
       <div style={S.formGroup}><FormField form={form} setForm={setForm} label="Periods per Week" field="periodsPerWeek" type="number"/></div>
       <div style={S.formGroup}><label style={S.label}>Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div>
@@ -4017,6 +4259,8 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
   const [extraClass,setExtraClass]=useState("");
   const [extraSub,setExtraSub]=useState("");
   const isRoot=currentUser?.role==="root";
+  const [rcForm,setRcForm]=useState(getResultConfig(settings));
+  useEffect(function(){ if(tab==="resultconfig") setRcForm(getResultConfig(settings)); },[tab]);
 
   // Admin accounts now live only behind the authenticated /api/admin endpoint —
   // never in settings, never in the generic /api/db proxy (see admin.js).
@@ -4067,7 +4311,7 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
       </div>
     </div>
 
-    <Tabs tabs={[["general","General"],["admins","Admin Accounts"],["calendar","Calendar"],["classes","Classes & Subjects"]]} active={tab} onChange={setTab}/>
+    <Tabs tabs={[["general","General"],["admins","Admin Accounts"],["calendar","Calendar"],["classes","Classes & Subjects"],...(isRoot?[["resultconfig","Result Sheet Config"]]:[])]} active={tab} onChange={setTab}/>
 
     {tab==="general"&&<div>
       <div style={S.grid2}>
@@ -4460,6 +4704,83 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
           {(settings.extraSubjects||[]).length>0&&<div style={{marginTop:10,display:"flex",flexWrap:"wrap",gap:6}}>{(settings.extraSubjects||[]).map(s=><div key={s} style={{...S.badge("green"),padding:"4px 10px",...S.row}}>{s}<button style={{background:"none",border:"none",cursor:"pointer",color:C.danger,marginLeft:4,fontSize:12}} onClick={()=>setSettingsSafe(p=>({...p,extraSubjects:p.extraSubjects.filter(x=>x!==s)}))}>×</button></div>)}</div>}
         </div>
       </div>
+    </div>}
+
+    {isRoot&&tab==="resultconfig"&&<div>
+      <div style={{...S.card,marginBottom:14,background:"#FFFBEB",border:"1px solid #F0C060"}}>
+        <div style={{fontSize:12,color:"#92400E"}}>🔑 Root-only. These settings control how CA/Exam scores are entered and how every report card is graded, laid out and released to parents.</div>
+      </div>
+
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={S.cardTitle}>Result Visibility to Students/Parents</div>
+        <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>Controls {CURRENT_TERM} {CURRENT_SESSION}. Older terms stay visible unless separately hidden.</div>
+        {(function(){
+          var key = CURRENT_SESSION+"_"+CURRENT_TERM;
+          var published = (settings.resultsPublished||{})[key] !== false;
+          return(
+            <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+              <span style={S.badge(published?"green":"red")}>{published?"🟢 Published — visible to parents":"🔒 Hidden from parents"}</span>
+              <button style={S.btn(published?"danger":"green")} onClick={function(){
+                setSettingsSafe(function(p){
+                  var rp = {...(p.resultsPublished||{})};
+                  rp[key] = !published;
+                  return {...p, resultsPublished:rp};
+                });
+              }}>{published?"Hide Results Now":"Publish Results Now"}</button>
+            </div>
+          );
+        })()}
+      </div>
+
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={S.cardTitle}>Score Columns (Max Marks)</div>
+        <div style={S.grid3}>
+          <div style={S.formGroup}><label style={S.label}>CA1 Max</label><input type="number" style={S.input} value={rcForm.ca1Max} onChange={e=>setRcForm(p=>({...p,ca1Max:parseInt(e.target.value)||0}))}/></div>
+          <div style={S.formGroup}><label style={S.label}>CA2 Max</label><input type="number" style={S.input} value={rcForm.ca2Max} onChange={e=>setRcForm(p=>({...p,ca2Max:parseInt(e.target.value)||0}))}/></div>
+          <div style={S.formGroup}><label style={S.label}>Exam Max</label><input type="number" style={S.input} value={rcForm.examMax} onChange={e=>setRcForm(p=>({...p,examMax:parseInt(e.target.value)||0}))}/></div>
+        </div>
+        <div style={{fontSize:11,color:C.textMuted,marginTop:4}}>Total = {rcForm.ca1Max+rcForm.ca2Max+rcForm.examMax}. Changing these does not rescale scores already entered.</div>
+      </div>
+
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={S.cardTitle}>Pass Mark</div>
+        <input type="number" style={{...S.input,width:120}} value={rcForm.passMark} onChange={e=>setRcForm(p=>({...p,passMark:parseInt(e.target.value)||0}))}/>
+        <div style={{fontSize:11,color:C.textMuted,marginTop:4}}>Used in Analytics, Broadsheet colouring, Parent Portal, Counsellor flags, and the "assign to below-pass-mark students" tool in Results → Score Entry.</div>
+      </div>
+
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={S.cardTitle}>Grading Scale</div>
+        <table style={S.table}>
+          <thead><tr><th style={S.th}>Grade</th><th style={S.th}>Min Score</th><th style={S.th}>Remark</th></tr></thead>
+          <tbody>
+            {rcForm.gradeScale.map(function(g,i){
+              return(
+                <tr key={g.grade}>
+                  <td style={{...S.td,fontWeight:700}}>{g.grade}</td>
+                  <td style={S.td}><input type="number" style={{...S.input,width:70}} value={g.min} onChange={function(e){var v=parseInt(e.target.value)||0;setRcForm(function(p){var gs=p.gradeScale.slice();gs[i]={...gs[i],min:v};return {...p,gradeScale:gs};});}}/></td>
+                  <td style={S.td}><input style={S.input} value={g.remark} onChange={function(e){var v=e.target.value;setRcForm(function(p){var gs=p.gradeScale.slice();gs[i]={...gs[i],remark:v};return {...p,gradeScale:gs};});}}/></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={S.cardTitle}>Report Card Sections</div>
+        {[["showAffectiveTraits","Affective Traits"],["showPsychomotorSkills","Psychomotor Skills"],["showPosition","Position (class &amp; subject)"],["showClassAverage","Class Average / Highest / Lowest / Weighted Score"],["showComments","Comment Blocks (Teacher / Form Master / Principal)"]].map(function(pair){
+          return(
+            <div key={pair[0]} style={{...S.row,justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid "+C.border}}>
+              <span style={{fontSize:12}}>{pair[1]}</span>
+              <button onClick={function(){setRcForm(function(p){return {...p,[pair[0]]:!p[pair[0]]};});}} style={{background:rcForm[pair[0]]?"#059669":"#E5E7EB",border:"none",borderRadius:12,width:44,height:24,position:"relative",cursor:"pointer"}}>
+                <div style={{position:"absolute",top:3,left:rcForm[pair[0]]?23:3,width:18,height:18,background:"#fff",borderRadius:"50%",transition:"left 0.2s"}}/>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <button style={S.btn()} onClick={function(){setSettingsSafe(function(p){return {...p,resultConfig:rcForm};});alert("Result sheet configuration saved.");}}>💾 Save Result Sheet Configuration</button>
     </div>}
   </div>);
 }
@@ -4910,7 +5231,10 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
 
   // Only published lessons are ever visible to students.
   const classLessons = lessons.filter(l=>l.class===selCls&&l.status==="Published");
-  const classAssignments = assignments.filter(a=>a.class===selCls);
+  // Teachers/admins see every class assignment (for marking/oversight); a student
+  // viewer only sees ones with no explicit targeting, or ones targeted to them
+  // specifically (see the "assign remedial work" tool in Results → Score Entry).
+  const classAssignments = assignments.filter(a=>a.class===selCls && (isTeacherOrAdmin || !a.targetStudentIds || a.targetStudentIds.length===0 || (myStudent&&a.targetStudentIds.includes(myStudent.id))));
 
   function mySubmission(assignmentId){
     return myStudent?submissions.find(s=>s.assignmentId===assignmentId&&s.studentId===myStudent.id):null;
@@ -5849,7 +6173,7 @@ function ELibraryModule({elibrary, setElibrary, currentUser, students, staff}){
 }
 
 
-function GalleryModule({gallery, setGallery, currentUser}){
+function GalleryModule({gallery, setGallery, currentUser, readOnly}){
   const [tab, setTab] = useState("grid");
   const [showForm, setShowForm] = useState(false);
   const [filterCategory, setFilterCategory] = useState("");
@@ -5950,7 +6274,7 @@ function GalleryModule({gallery, setGallery, currentUser}){
         <input style={{...S.input,width:180}} placeholder="Search event name..." value={filterEvent} onChange={e=>setFilterEvent(e.target.value)}/>
         {(filterCategory||filterEvent)&&<button style={{...S.btn("secondary"),fontSize:11}} onClick={()=>{setFilterCategory("");setFilterEvent("");}}>Clear Filters</button>}
       </div>
-      <button style={S.btn()} onClick={()=>setShowForm(true)}><span style={S.row}><Icon name="plus" size={13}/>New Album / Upload Photos</span></button>
+      {!readOnly&&<button style={S.btn()} onClick={()=>setShowForm(true)}><span style={S.row}><Icon name="plus" size={13}/>New Album / Upload Photos</span></button>}
     </div>
 
     <div className="no-print" style={S.statsGrid}>
@@ -5983,7 +6307,7 @@ function GalleryModule({gallery, setGallery, currentUser}){
             </div>
             {album.description&&<div style={{fontSize:12,color:C.text,marginTop:6,lineHeight:1.5}}>{album.description}</div>}
           </div>
-          <button className="no-print" style={{...S.btn("danger"),fontSize:10,padding:"4px 9px"}} onClick={()=>deleteAlbum(album.id)}>Delete Album</button>
+          {!readOnly&&<button className="no-print" style={{...S.btn("danger"),fontSize:10,padding:"4px 9px"}} onClick={()=>deleteAlbum(album.id)}>Delete Album</button>}
         </div>
 
         {album.photos.length===0?(
@@ -5999,8 +6323,8 @@ function GalleryModule({gallery, setGallery, currentUser}){
                     <span style={{fontSize:9,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",display:"block"}}>{photo.caption}</span>
                   </div>
                 )}
-                <button className="no-print" onClick={e=>{e.stopPropagation();deletePhoto(album.id, photo.id);}}
-                  style={{position:"absolute",top:4,right:4,width:20,height:20,borderRadius:"50%",background:"rgba(185,28,28,0.85)",color:"#fff",border:"none",cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                {!readOnly&&<button className="no-print" onClick={e=>{e.stopPropagation();deletePhoto(album.id, photo.id);}}
+                  style={{position:"absolute",top:4,right:4,width:20,height:20,borderRadius:"50%",background:"rgba(185,28,28,0.85)",color:"#fff",border:"none",cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
               </div>
             ))}
           </div>
@@ -6691,7 +7015,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
 }
 
 
-function ParentPortal({student, students, results, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, exams, parentToken, onLogout}){
+function ParentPortal({student, students, results, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, exams, gallery, parentToken, onRefresh, onLogout}){
   var _tab = useState("home"); var tab = _tab[0]; var setTab = _tab[1];
   var _selSess = useState(CURRENT_SESSION); var selSess = _selSess[0]; var setSelSess = _selSess[1];
   var _selTerm = useState(CURRENT_TERM); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
@@ -6700,8 +7024,29 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
   var _examResult = useState(null); var examResult = _examResult[0]; var setExamResult = _examResult[1];
   var _loadingExam = useState(false); var loadingExam = _loadingExam[0]; var setLoadingExam = _loadingExam[1];
   var _remainingSec = useState(null); var remainingSec = _remainingSec[0]; var setRemainingSec = _remainingSec[1];
+  var _submittingAsn = useState(null); var submittingAsn = _submittingAsn[0]; var setSubmittingAsn = _submittingAsn[1];
+  var _submissionText = useState(""); var submissionText = _submissionText[0]; var setSubmissionText = _submissionText[1];
+  var _submitBusy = useState(false); var submitBusy = _submitBusy[0]; var setSubmitBusy = _submitBusy[1];
 
   var logo = settings.schoolLogo || "";
+  var rc = getResultConfig(settings);
+
+  function submitAssignmentAnswer(assignmentId){
+    if(!submissionText.trim()) return alert("Please write an answer before submitting.");
+    setSubmitBusy(true);
+    fetch("/api/parent-assignment", {
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+parentToken},
+      body:JSON.stringify({action:"submit", assignmentId:assignmentId, content:submissionText})
+    }).then(function(r){ return r.json(); }).then(function(res){
+      setSubmitBusy(false);
+      if(res.error) return alert(res.error);
+      setSubmittingAsn(null);
+      setSubmissionText("");
+      if(onRefresh) onRefresh();
+      alert("Assignment submitted successfully!");
+    }).catch(function(e){ setSubmitBusy(false); alert("Could not submit: "+e.message); });
+  }
 
   // ── Child's data ────────────────────────────────────
   var childResults = results.filter(function(r){ return r.studentId === student.id; });
@@ -6722,7 +7067,7 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
   var avgScore = termResults.length ? (totalScore/termResults.length).toFixed(1) : null;
   var highest = termResults.length ? Math.max.apply(null, termResults.map(function(r){return r.total;})) : null;
   var lowest = termResults.length ? Math.min.apply(null, termResults.map(function(r){return r.total;})) : null;
-  var passed = termResults.filter(function(r){ return r.total>=40; }).length;
+  var passed = termResults.filter(function(r){ return r.total>=rc.passMark; }).length;
 
   // ── Fees summary ──────────────────────────────────
   var totalFeesBilled = termFees.reduce(function(a,f){ return a+(f.amount||0); }, 0);
@@ -6740,12 +7085,14 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
     ["attendance","📋 Attendance"],["fees","💰 Fees"],
     ["lessons","📖 Lesson Notes"],["assignments","📝 Assignments"],
     ["cbt","🖥 CBT Exams"],
-    ["notices","📢 Notices"],["library","📚 Library"],
+    ["notices","📢 Notices"],["library","📚 Library"],["gallery","🖼 Gallery"],
   ];
 
   // ── Lesson notes & assignments (read-only for parents) ──
   var classLessons = (lessons||[]).filter(function(l){ return l.class === student.class; });
-  var classAssignments = (assignments||[]).filter(function(a){ return a.class === student.class; });
+  // Only class-wide assignments, or ones specifically targeted to this child
+  // (see the "assign remedial work" tool in Results — Score Entry).
+  var classAssignments = (assignments||[]).filter(function(a){ return a.class === student.class && (!a.targetStudentIds || a.targetStudentIds.length===0 || a.targetStudentIds.includes(student.id)); });
   function childSubmission(assignmentId){
     return (submissions||[]).find(function(s){ return s.assignmentId===assignmentId && s.studentId===student.id; });
   }
@@ -6853,6 +7200,8 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
           {logo ? <img src={logo} alt="" style={{width:50,height:50,objectFit:"contain",opacity:0.8}}/> : null}
         </div>
 
+        <SchoolCalendarWidget settings={settings}/>
+
         {/* Quick stats */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:12,marginBottom:16}}>
           {[
@@ -6950,14 +7299,14 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
                 <thead><tr>{["Subject","CA1","CA2","Exam","Total","Grade","Remark"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
                 <tbody>
                   {termResults.sort(function(a,b){return b.total-a.total;}).map(function(r){
-                    var g = getGrade(r.total);
+                    var g = getGrade(r.total, settings);
                     return(
                       <tr key={r.id}>
                         <td style={{...S.td,fontWeight:600}}>{r.subject}</td>
                         <td style={S.tdC}>{r.ca1||"—"}</td>
                         <td style={S.tdC}>{r.ca2||"—"}</td>
                         <td style={S.tdC}>{r.exam||"—"}</td>
-                        <td style={{...S.tdC,fontWeight:700,fontSize:13,color:r.total>=40?"#059669":"#DC2626"}}>{r.total}</td>
+                        <td style={{...S.tdC,fontWeight:700,fontSize:13,color:r.total>=rc.passMark?"#059669":"#DC2626"}}>{r.total}</td>
                         <td style={S.tdC}><span style={S.badge(CAT_COLOR[g.grade]||"yellow")}>{g.grade}</span></td>
                         <td style={{...S.td,fontSize:11,color:r.total>=70?"#059669":r.total>=50?"#D97706":"#DC2626"}}>{g.remark}</td>
                       </tr>
@@ -7246,8 +7595,23 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
                     {sub.feedback&&<div style={{fontSize:12,color:"#230E6A",marginTop:6,fontStyle:"italic"}}>Teacher's comment: "{sub.feedback}"</div>}
                   </>}
                 </div>
+              ):open?(
+                submittingAsn===asn.id?(
+                  <div style={{marginTop:12,background:"#F5F3FB",border:"1px solid "+C.border,borderRadius:8,padding:12}}>
+                    <label style={{...S.label,marginBottom:6}}>Your Answer:</label>
+                    <textarea style={{...S.textarea,minHeight:100}} value={submissionText} onChange={function(e){setSubmissionText(e.target.value);}} placeholder="Type your child's answer here..."/>
+                    <div style={{...S.row,marginTop:10,gap:8}}>
+                      <button style={S.btn()} disabled={submitBusy} onClick={function(){submitAssignmentAnswer(asn.id);}}>{submitBusy?"Submitting...":"Submit"}</button>
+                      <button style={S.btn("secondary")} onClick={function(){setSubmittingAsn(null);setSubmissionText("");}}>Cancel</button>
+                    </div>
+                  </div>
+                ):(
+                  <button style={{...S.btn(),marginTop:12,fontSize:11}} onClick={function(){setSubmittingAsn(asn.id);setSubmissionText("");}}>📝 Submit Assignment</button>
+                )
               ):(
-                <div style={{marginTop:12,fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Not yet submitted by your child.</div>
+                <div style={{marginTop:12,background:"#FEE2E2",border:"1px solid "+C.danger,borderRadius:8,padding:10,fontSize:12,color:C.danger,fontWeight:600}}>
+                  🔒 Submissions for this assignment have been closed by the teacher. You missed the deadline.
+                </div>
               )}
             </div>
           );
@@ -7381,6 +7745,18 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
     );
   }
 
+  function renderGallery(){
+    return(
+      <div>
+        <div style={{background:"linear-gradient(120deg,#230E6A,#059669)",borderRadius:12,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
+          <div style={{fontSize:16,fontWeight:800}}>🖼 School Gallery</div>
+          <div style={{fontSize:11,opacity:0.8,marginTop:2}}>Photos from school events — view only</div>
+        </div>
+        <GalleryModule gallery={gallery||[]} setGallery={function(){}} currentUser={{name:student.parentName||"Parent"}} readOnly={true}/>
+      </div>
+    );
+  }
+
   return(
     <div style={{minHeight:"100vh",background:"#F9FAFB",fontFamily:"'Segoe UI',sans-serif"}}>
       {/* Top bar */}
@@ -7421,6 +7797,7 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
         {tab==="cbt" ? renderCbt() : null}
         {tab==="notices" ? renderNotices() : null}
         {tab==="library" ? renderLibrary() : null}
+        {tab==="gallery" ? renderGallery() : null}
       </div>
     </div>
   );
@@ -7865,6 +8242,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
   var _tab = useState("session"); var tab = _tab[0]; var setTab = _tab[1];
   var sessions = counsellingSessions;
   var setSessions = setCounsellingSessions;
+  var rc = getResultConfig(settings);
 
   // ── Patient selection ─────────────────────────────
   var _selClass = useState("JSS1"); var selClass = _selClass[0]; var setSelClass = _selClass[1];
@@ -7937,9 +8315,9 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
     var flags = [];
     if(stuResults.length > 0){
       var avg = stuResults.reduce(function(a,r){return a+(r.total||0);},0)/stuResults.length;
-      if(avg < 40) flags.push("Failing multiple subjects (avg: "+avg.toFixed(1)+"%)");
-      if(avg >= 40 && avg < 50) flags.push("Below average performance (avg: "+avg.toFixed(1)+"%)");
-      var failing = stuResults.filter(function(r){return r.total < 40;});
+      if(avg < rc.passMark) flags.push("Failing multiple subjects (avg: "+avg.toFixed(1)+"%)");
+      if(avg >= rc.passMark && avg < rc.passMark+10) flags.push("Below average performance (avg: "+avg.toFixed(1)+"%)");
+      var failing = stuResults.filter(function(r){return r.total < rc.passMark;});
       if(failing.length > 0) flags.push("Failing: "+failing.map(function(r){return r.subject;}).join(", "));
     } else {
       flags.push("No results recorded this term");
@@ -9198,8 +9576,9 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
   var _newQ = useState(emptyQ); var newQ = _newQ[0]; var setNewQ = _newQ[1];
   var _editingQ = useState(null); var editingQ = _editingQ[0]; var setEditingQ = _editingQ[1];
 
-  var COLUMN_LABELS = {ca1:"CA1 (max 20)",ca2:"CA2 (max 20)",exam:"Exam (max 60)"};
-  var COLUMN_MAX = {ca1:20,ca2:20,exam:60};
+  var rc = getResultConfig(settings);
+  var COLUMN_LABELS = {ca1:"CA1 (max "+rc.ca1Max+")",ca2:"CA2 (max "+rc.ca2Max+")",exam:"Exam (max "+rc.examMax+")"};
+  var COLUMN_MAX = {ca1:rc.ca1Max,ca2:rc.ca2Max,exam:rc.examMax};
   var ARMS = ["A","B","C","D","E"];
 
   // ── Add/edit question ─────────────────────────────
@@ -10315,7 +10694,7 @@ export default function App(){
   const [dbStatus,setDbStatus]=useState("loading");
   const [parentStudent,setParentStudent]=useState(null); // set when parent logs in
   const [parentToken,setParentToken]=useState(null); // scoped JWT, needed for CBT exam actions
-  const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[]});
+  const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[],gallery:[]});
   const isMobile = useIsMobile();
   const [sidebarOpen,setSidebarOpen]=useState(false);
 
@@ -10339,6 +10718,7 @@ export default function App(){
   const [elibrary,_setElibrary]=useState(SEED_ELIBRARY);
   const [clinic,_setClinic]=useState(SEED_CLINIC);
   const [counsellingSessions,_setCounsellingSessions]=useState([]);
+  const [classRemarks,_setClassRemarks]=useState([]);
   const [exams,_setExams]=useState(SEED_EXAMS);
   const [examMarks,_setExamMarks]=useState({});
   const [cbtEnabled,setCbtEnabled]=useState(false);
@@ -10365,6 +10745,7 @@ export default function App(){
   const setElibrary   = makeSynced("elibrary",   _setElibrary,   false);
   const setClinic     = makeSynced("clinic",     _setClinic,     false);
   const setCounsellingSessions = makeSynced("counselling", _setCounsellingSessions, false);
+  const setClassRemarks = makeSynced("class_remarks", _setClassRemarks, false);
   const setExams       = makeSynced("exams",      _setExams,      false);
   const setExamMarks   = makeSynced("exam_marks", _setExamMarks,  true);
 
@@ -10425,13 +10806,13 @@ export default function App(){
           dbStudents, dbStaff, dbAttendance, dbResults, dbFees, dbExpenditure,
           dbLessons, dbAssignments, dbSubmissions, dbMessages, dbDiary,
           dbElibrary, dbConduct, dbTimetable, dbPromotions, dbClinic,
-          dbCounselling, dbExams, dbExamMarks
+          dbCounselling, dbExams, dbExamMarks, dbClassRemarks
         ] = await Promise.all([
           sbLoad("students"), sbLoad("staff"), sbLoad("attendance"), sbLoad("results"),
           sbLoad("fees"), sbLoad("expenditure"), sbLoad("lessons"), sbLoad("assignments"),
           sbLoad("submissions"), sbLoad("messages"), sbLoad("diary"),
           sbLoad("elibrary"), sbLoad("conduct"), sbLoad("timetable"), sbLoad("promotions"), sbLoad("clinic"),
-          sbLoad("counselling"), sbLoad("exams"), sbLoad("exam_marks")
+          sbLoad("counselling"), sbLoad("exams"), sbLoad("exam_marks"), sbLoad("class_remarks")
         ]);
 
         if(dbStudents && dbStudents.length)      _setStudents(dbStudents);
@@ -10468,6 +10849,8 @@ export default function App(){
         markSynced("clinic", dbClinic);
         if(dbCounselling && dbCounselling.length)_setCounsellingSessions(dbCounselling);
         markSynced("counselling", dbCounselling);
+        if(dbClassRemarks && dbClassRemarks.length) _setClassRemarks(dbClassRemarks);
+        markSynced("class_remarks", dbClassRemarks);
         if(dbExams && dbExams.length)            _setExams(dbExams);
         markSynced("exams", dbExams);
         if(dbExamMarks && typeof dbExamMarks==="object") _setExamMarks(dbExamMarks);
@@ -10489,7 +10872,7 @@ export default function App(){
 
   // Show parent portal if parent logged in
   if(parentStudent){
-    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} lessons={parentData.lessons} assignments={parentData.assignments} submissions={parentData.submissions} exams={parentData.exams} parentToken={parentToken} onLogout={()=>{setParentStudent(null);setParentToken(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[]});}}/>;
+    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} lessons={parentData.lessons} assignments={parentData.assignments} submissions={parentData.submissions} exams={parentData.exams} gallery={parentData.gallery} parentToken={parentToken} onRefresh={()=>refreshParentData(parentToken)} onLogout={()=>{setParentStudent(null);setParentToken(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[],gallery:[]});}}/>;
   }
 
   // Parent credentials (Admission No. + registered phone) are verified
@@ -10498,6 +10881,27 @@ export default function App(){
   // token is scoped to exactly one student and only ever used against
   // /api/parent-data, never /api/db (which would return every family's
   // records, not just this one).
+  async function refreshParentData(token){
+    const dataRes = await fetch("/api/parent-data", {
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
+      body:JSON.stringify({})
+    }).then(r=>r.json());
+
+    setParentData({
+      results: dataRes.results||[],
+      attendance: dataRes.attendance||[],
+      fees: dataRes.fees||[],
+      diary: dataRes.diary||[],
+      elibrary: dataRes.elibrary||[],
+      lessons: dataRes.lessons||[],
+      assignments: dataRes.assignments||[],
+      submissions: dataRes.submissions||[],
+      exams: dataRes.exams||[],
+      gallery: dataRes.gallery||[]
+    });
+  }
+
   async function handleParentLogin(admissionNo, phone){
     try{
       const loginRes = await fetch("/api/parent-login", {
@@ -10508,23 +10912,7 @@ export default function App(){
 
       if(!loginRes.success||!loginRes.token||!loginRes.student) return false;
 
-      const dataRes = await fetch("/api/parent-data", {
-        method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":"Bearer "+loginRes.token},
-        body:JSON.stringify({})
-      }).then(r=>r.json());
-
-      setParentData({
-        results: dataRes.results||[],
-        attendance: dataRes.attendance||[],
-        fees: dataRes.fees||[],
-        diary: dataRes.diary||[],
-        elibrary: dataRes.elibrary||[],
-        lessons: dataRes.lessons||[],
-        assignments: dataRes.assignments||[],
-        submissions: dataRes.submissions||[],
-        exams: dataRes.exams||[]
-      });
+      await refreshParentData(loginRes.token);
       setParentToken(loginRes.token);
       setParentStudent(loginRes.student);
       return true;
@@ -10613,11 +11001,11 @@ export default function App(){
         </div>
       </div>
       <div style={S.content(isMobile)}>
-        {page==="analytics"&&(userCanAccess(currentUser,"analytics")?<AnalyticsModule students={students} attendance={attendance} results={results}/>:<AccessDenied/>)}
+        {page==="analytics"&&(userCanAccess(currentUser,"analytics")?<AnalyticsModule students={students} attendance={attendance} results={results} settings={settings}/>:<AccessDenied/>)}
         {page==="dashboard"&&<DashboardHome students={students} results={results} fees={fees} attendance={attendance} staff={staff} settings={settings} currentUser={currentUser} onNavigate={navigate}/>}
         {page==="students"&&(userCanAccess(currentUser,"students")?<StudentsModule students={students} setStudents={setStudents}/>:<AccessDenied/>)}
         {page==="attendance"&&(userCanAccess(currentUser,"attendance")?<AttendanceModule students={students} attendance={attendance} setAttendance={setAttendance} settings={settings}/>:<AccessDenied/>)}
-        {page==="results"&&(userCanAccess(currentUser,"results")?<ResultsModule students={students} results={results} setResults={setResults} settings={settings} staff={staff} currentUser={currentUser}/>:<AccessDenied/>)}
+        {page==="results"&&(userCanAccess(currentUser,"results")?<ResultsModule students={students} results={results} setResults={setResults} settings={settings} staff={staff} currentUser={currentUser} classRemarks={classRemarks} setClassRemarks={setClassRemarks} assignments={assignments} setAssignments={setAssignments}/>:<AccessDenied/>)}
         {page==="lessons"&&(userCanAccess(currentUser,"lessons")?<LessonsModule staff={staff} students={students} lessons={lessons} setLessons={setLessons} assignments={assignments} setAssignments={setAssignments} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="studentportal"&&(userCanAccess(currentUser,"studentportal")?<StudentPortalModule students={students} staff={staff} lessons={lessons} assignments={assignments} submissions={submissions} setSubmissions={setSubmissions} results={results} setResults={setResults} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="fees"&&(userCanAccess(currentUser,"fees")?<FeesModule students={students} fees={fees} setFees={setFees} expenditure={expenditure} setExpenditure={setExpenditure} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}

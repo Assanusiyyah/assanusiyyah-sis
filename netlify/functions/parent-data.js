@@ -53,7 +53,7 @@ exports.handler = async function(event, context) {
   };
 
   try {
-    const [allResults, allAttendance, allFees, diary, elibrary, allLessons, allAssignments, allSubmissions, allExams] = await Promise.all([
+    const [allResults, allAttendance, allFees, diary, elibrary, allLessons, allAssignments, allSubmissions, allExams, gallery, allSettings] = await Promise.all([
       fetchTable(sbHeaders, "results"),
       fetchTable(sbHeaders, "attendance"),
       fetchTable(sbHeaders, "fees"),
@@ -62,14 +62,27 @@ exports.handler = async function(event, context) {
       fetchTable(sbHeaders, "lessons"),
       fetchTable(sbHeaders, "assignments"),
       fetchTable(sbHeaders, "submissions"),
-      fetchTable(sbHeaders, "exams")
+      fetchTable(sbHeaders, "exams"),
+      fetchTable(sbHeaders, "gallery"),
+      fetchTable(sbHeaders, "settings")
     ]);
 
-    const results = allResults.filter(function(r) { return r.studentId === studentId; });
+    // A result is visible unless its session/term has been explicitly hidden
+    // via Settings → Result Sheet Config → Result Visibility (default: visible,
+    // so existing historical results never disappear just because the toggle
+    // is new).
+    const resultsPublished = (allSettings[0] && allSettings[0].resultsPublished) || {};
+    const isResultPublished = function(r) { return resultsPublished[r.session + "_" + r.term] !== false; };
+
+    const results = allResults.filter(function(r) { return r.studentId === studentId; }).filter(isResultPublished);
     const attendance = allAttendance.filter(function(a) { return a.studentId === studentId; });
     const fees = allFees.filter(function(f) { return f.studentId === studentId; });
     const lessons = allLessons.filter(function(l) { return l.class === studentClass && l.status === "Published"; });
-    const assignments = allAssignments.filter(function(a) { return a.class === studentClass; });
+    // Only class-wide assignments, or ones specifically targeted to this student
+    // (see the "assign remedial work" tool in the Results module).
+    const assignments = allAssignments.filter(function(a) {
+      return a.class === studentClass && (!a.targetStudentIds || a.targetStudentIds.length === 0 || a.targetStudentIds.indexOf(studentId) !== -1);
+    });
     const submissions = allSubmissions.filter(function(s) { return s.studentId === studentId; });
 
     // CBT exams: sanitized listing only — never send questions/answer keys here.
@@ -81,7 +94,7 @@ exports.handler = async function(event, context) {
         return { id: e.id, title: e.title, subject: e.subject, class: e.class, arm: e.arm, duration: e.duration, date: e.date, session: e.session, term: e.term };
       });
 
-    return { statusCode: 200, headers, body: JSON.stringify({ results, attendance, fees, diary, elibrary, lessons, assignments, submissions, exams }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ results, attendance, fees, diary, elibrary, lessons, assignments, submissions, exams, gallery }) };
 
   } catch (err) {
     console.error("[ParentData] Exception:", err.message);

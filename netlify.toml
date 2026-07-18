@@ -48,6 +48,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/parent-assignment"
+  to = "/.netlify/functions/parent-assignment"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
