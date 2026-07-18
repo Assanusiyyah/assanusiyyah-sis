@@ -50,8 +50,12 @@ async function upsertRow(table, id, data) {
     headers: Object.assign({}, sbHeaders(), { "Prefer": "resolution=merge-duplicates,return=minimal" }),
     body: JSON.stringify(payload)
   });
-  if (!resp.ok) { const t = await resp.text(); console.error("[ExamAttempt] upsert failed:", table, id, resp.status, t); }
-  return resp.ok;
+  if (!resp.ok) {
+    const t = await resp.text();
+    console.error("[ExamAttempt] upsert failed:", table, id, resp.status, t);
+    return { ok: false, status: resp.status, error: t };
+  }
+  return { ok: true };
 }
 
 function shuffle(arr) {
@@ -164,7 +168,10 @@ exports.handler = async function(event, context) {
         tabSwitchCount: 0, pasteAttemptCount: 0, effectiveDurationMinutes: effectiveDuration,
         score: null, maxScore: shuffled.reduce(function(a, q) { return a + (parseFloat(q.marks) || 0); }, 0), graded: false
       };
-      await upsertRow("exam_attempts", attempt.id, attempt);
+      const saveResult = await upsertRow("exam_attempts", attempt.id, attempt);
+      if (!saveResult.ok) {
+        return { statusCode: 500, headers, body: JSON.stringify({ error: "Could not save exam attempt (status " + saveResult.status + "): " + saveResult.error }) };
+      }
 
       return { statusCode: 200, headers, body: JSON.stringify({
         resume: false, attemptId: attempt.id, startedAt: attempt.startedAt,
@@ -186,7 +193,8 @@ exports.handler = async function(event, context) {
           return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid question" }) };
         }
         attempt.answers = Object.assign({}, attempt.answers, { [questionId]: body.value });
-        await upsertRow("exam_attempts", attemptId, attempt);
+        const saveResult = await upsertRow("exam_attempts", attemptId, attempt);
+        if (!saveResult.ok) return { statusCode: 500, headers, body: JSON.stringify({ error: "Could not save answer: " + saveResult.error }) };
         return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
       }
 
@@ -196,7 +204,8 @@ exports.handler = async function(event, context) {
         return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid field" }) };
       }
       attempt[field] = (attempt[field] || 0) + 1;
-      await upsertRow("exam_attempts", attemptId, attempt);
+      const flagSaveResult = await upsertRow("exam_attempts", attemptId, attempt);
+      if (!flagSaveResult.ok) return { statusCode: 500, headers, body: JSON.stringify({ error: "Could not save flag: " + flagSaveResult.error }) };
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, count: attempt[field] }) };
     }
 
@@ -235,7 +244,8 @@ exports.handler = async function(event, context) {
       attempt.correctCount = correctCount;
       attempt.totalCount = attempt.questionOrder.length;
       attempt.graded = true;
-      await upsertRow("exam_attempts", attemptId, attempt);
+      const submitSaveResult = await upsertRow("exam_attempts", attemptId, attempt);
+      if (!submitSaveResult.ok) return { statusCode: 500, headers, body: JSON.stringify({ error: "Could not save submission: " + submitSaveResult.error }) };
 
       // Pre-fill the objective marks into the existing exam_marks singleton so
       // a teacher marking theory questions manually sees CBT answers already scored.
