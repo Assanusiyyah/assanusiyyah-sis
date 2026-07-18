@@ -627,6 +627,7 @@ const ALL_PAGES = [
   {id:"fees",label:"Fees & Finance",icon:"fees"},
   {id:"clinic",label:"Clinic",icon:"clinic"},
   {id:"exams",label:"Exams",icon:"exams"},
+  {id:"hostel",label:"Hostel & Kitchen",icon:"hostel"},
   {id:"staff",label:"Staff",icon:"staff"},
   {id:"timetable",label:"Timetable",icon:"timetable"},
   {id:"idcards",label:"ID Cards",icon:"idcard"},
@@ -665,6 +666,7 @@ const NAV = [
   {id:"fees",label:"Fees & Finance",icon:"fees",section:"FINANCE"},
   {id:"clinic",label:"Clinic",icon:"clinic",section:"ACADEMICS"},
   {id:"exams",label:"Exams",icon:"exams",section:"ACADEMICS"},
+  {id:"hostel",label:"Hostel & Kitchen",icon:"hostel",section:"ADMINISTRATION"},
   {id:"staff",label:"Staff",icon:"staff",section:"ADMINISTRATION"},
   {id:"timetable",label:"Timetable",icon:"timetable",section:"ADMINISTRATION"},
   {id:"idcards",label:"ID Cards",icon:"idcard",section:"ADMINISTRATION"},
@@ -685,6 +687,7 @@ const PAGE_TITLES = {
   lessons:"Lesson Notes",studentportal:"Student Portal",
   fees:"Fees & Finance",staff:"Staff Records",timetable:"School Timetable",idcards:"ID Cards",diary:"School Diary",
   messages:"Messages",welfare:"Welfare & Conduct",settings:"Settings & Administration",gallery:"School Gallery",
+  hostel:"Hostel & Kitchen Management",
 };
 
 // Dashboard card colours per module
@@ -712,6 +715,7 @@ const MODULE_COLORS = {
   calendar:{bg:"#EFF6FF",accent:"#1D4ED8",emoji:"📅"},
   alumni:{bg:"#FDF4FF",accent:"#7C3AED",emoji:"🎓"},
   admissions:{bg:"#EFF6FF",accent:"#1D4ED8",emoji:"📝"},
+  hostel:{bg:"#FFF7ED",accent:"#B45309",emoji:"🏠"},
 };
 
 // ── Dashboard with clickable module cards ──────────────
@@ -938,6 +942,7 @@ function Icon({name,size=16,color="currentColor"}){
     exams:<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" {...p}/><polyline points="14 2 14 8 20 8" {...p}/><line x1="16" y1="13" x2="8" y2="13" {...p}/><line x1="16" y1="17" x2="8" y2="17" {...p}/><polyline points="10 9 9 9 8 9" {...p}/></>,
     admissions:<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" {...p}/><polyline points="14 2 14 8 20 8" {...p}/><line x1="16" y1="13" x2="8" y2="13" {...p}/><line x1="16" y1="17" x2="8" y2="17" {...p}/><polyline points="10 9 9 9 8 9" {...p}/></>,
     elibrary:<><path d="M4 19.5A2.5 2.5 0 016.5 17H20" {...p}/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" {...p}/><polyline points="12 2 12 10 9 7 12 10 15 7 12 10" {...p}/></>,
+    hostel:<><path d="M3 12L12 3l9 9" {...p}/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10" {...p}/></>,
   };
   return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24">{icons[name]||null}</svg>;
 }
@@ -3332,7 +3337,7 @@ function StaffFormModal({open,staffMember,onSave,onClose}){
     <Modal open={open} onClose={onClose} title={staffMember?"Edit Staff Record":"Add Staff Member"} wide>
       <div style={S.grid3}><FormField form={form} setForm={setForm} label="Surname *" field="surname"/><FormField form={form} setForm={setForm} label="First Name *" field="firstname"/><FormField form={form} setForm={setForm} label="Middle Name" field="middlename"/></div>
       <div style={S.grid3}><FormField form={form} setForm={setForm} label="Date of Birth" field="dob" type="date"/><FormField form={form} setForm={setForm} label="Gender" field="gender" opts={["Male","Female"]}/><FormField form={form} setForm={setForm} label="Phone" field="phone"/></div>
-      <div style={S.grid2}><FormField form={form} setForm={setForm} label="Highest Qualification" field="qualification"/><FormField form={form} setForm={setForm} label="Role" field="role" opts={["Teacher","Principal","Admin","Bursar","Others"]}/></div>
+      <div style={S.grid2}><FormField form={form} setForm={setForm} label="Highest Qualification" field="qualification"/><FormField form={form} setForm={setForm} label="Role" field="role" opts={["Teacher","Principal","Admin","Bursar","Matron","Hostel Master","Hostel Mistress","Others"]}/></div>
       <div style={S.grid2}><FormField form={form} setForm={setForm} label="Next of Kin" field="nextOfKin"/><FormField form={form} setForm={setForm} label="Next of Kin Phone" field="nextOfKinPhone"/></div>
       <div style={S.formGroup}><FormField form={form} setForm={setForm} label="Periods per Week" field="periodsPerWeek" type="number"/></div>
       <div style={S.formGroup}><label style={S.label}>Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div>
@@ -7395,6 +7400,491 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
   );
 }
 
+// ══════════════════════════════════════════════════════
+// HOSTEL & KITCHEN MODULE — raw material inventory/consumption,
+// supply requests (Bursar/Admin/Matron approval → Expenditure),
+// room allocation, roll call, and hostel discipline
+// ══════════════════════════════════════════════════════
+var HOSTEL_LOCATIONS = ["Kitchen","Boys Hostel","Girls Hostel"];
+var HOSTEL_CATEGORIES = ["Food","Toiletries","Cleaning Supplies","Bedding","Cooking Equipment","Others"];
+var HOSTEL_UNITS = ["kg","bag(s)","litre(s)","carton(s)","piece(s)","pack(s)","tuber(s)","dozen(s)"];
+
+function HostelModule({students, staff, settings, currentUser,
+  hostelInventory, setHostelInventory,
+  hostelConsumption, setHostelConsumption,
+  hostelRequests, setHostelRequests,
+  hostelRooms, setHostelRooms,
+  hostelRollcall, setHostelRollcall,
+  hostelIncidents, setHostelIncidents,
+  expenditure, setExpenditure
+}){
+  var _tab = useState("inventory"); var tab = _tab[0]; var setTab = _tab[1];
+
+  var isAdmin = currentUser.role==="root"||currentUser.role==="Admin";
+  var myStaffRec = staff.find(function(s){return (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase();});
+  var myRole = myStaffRec ? myStaffRec.role : null;
+  var canApprove = isAdmin || currentUser.role==="Bursar" || myRole==="Matron";
+  var isKitchenRestricted = myRole==="Hostel Master" || myRole==="Hostel Mistress";
+  var accessibleHostels = isKitchenRestricted ? ["Boys Hostel","Girls Hostel"] : HOSTEL_LOCATIONS;
+
+  var boarders = students.filter(function(s){return s.active && s.boardingType==="Boarder";});
+  function boysGirlsFor(hostel){ return hostel==="Boys Hostel" ? "Male" : hostel==="Girls Hostel" ? "Female" : null; }
+
+  // ═══════════════════ INVENTORY ═══════════════════
+  var _invFilter = useState(accessibleHostels[0]); var invFilter = _invFilter[0]; var setInvFilter = _invFilter[1];
+  var _showItemForm = useState(false); var showItemForm = _showItemForm[0]; var setShowItemForm = _showItemForm[1];
+  var _editingItem = useState(null); var editingItem = _editingItem[0]; var setEditingItem = _editingItem[1];
+  var emptyItemForm = {name:"", category:"Food", unit:"kg", currentStock:0, reorderLevel:0, hostel:invFilter||accessibleHostels[0]};
+  var _itemForm = useState(emptyItemForm); var itemForm = _itemForm[0]; var setItemForm = _itemForm[1];
+  var _consuming = useState(null); var consuming = _consuming[0]; var setConsuming = _consuming[1];
+  var _consumeQty = useState(""); var consumeQty = _consumeQty[0]; var setConsumeQty = _consumeQty[1];
+  var _restocking = useState(null); var restocking = _restocking[0]; var setRestocking = _restocking[1];
+  var _restockQty = useState(""); var restockQty = _restockQty[0]; var setRestockQty = _restockQty[1];
+
+  var visibleInventory = hostelInventory.filter(function(i){return accessibleHostels.includes(i.hostel) && (!invFilter||i.hostel===invFilter);});
+
+  function openAddItem(){ setEditingItem(null); setItemForm({...emptyItemForm, hostel:invFilter||accessibleHostels[0]}); setShowItemForm(true); }
+  function openEditItem(item){ setEditingItem(item); setItemForm({...item}); setShowItemForm(true); }
+  function saveItem(){
+    if(!itemForm.name.trim()) return alert("Item name is required.");
+    if(editingItem){
+      setHostelInventory(function(p){return p.map(function(i){return i.id===editingItem.id?{...itemForm,id:editingItem.id}:i;});});
+    } else {
+      setHostelInventory(function(p){return [...p, {...itemForm, id:genId(), currentStock:parseFloat(itemForm.currentStock)||0, reorderLevel:parseFloat(itemForm.reorderLevel)||0}];});
+    }
+    setShowItemForm(false);
+  }
+  function deleteItem(id){
+    if(window.confirm("Delete this inventory item? This cannot be undone.")) setHostelInventory(function(p){return p.filter(function(i){return i.id!==id;});});
+  }
+  function logConsumption(){
+    var qty = parseFloat(consumeQty);
+    if(!qty || qty<=0) return alert("Enter a valid quantity.");
+    if(qty > consuming.currentStock) { if(!window.confirm("This exceeds current stock ("+consuming.currentStock+" "+consuming.unit+"). Log anyway?")) return; }
+    setHostelInventory(function(p){return p.map(function(i){return i.id===consuming.id?{...i,currentStock:Math.max(0,i.currentStock-qty)}:i;});});
+    setHostelConsumption(function(p){return [{id:genId(), itemId:consuming.id, itemName:consuming.name, hostel:consuming.hostel, quantity:qty, unit:consuming.unit, date:today(), loggedBy:currentUser.name, session:CURRENT_SESSION, term:CURRENT_TERM}, ...p];});
+    setConsuming(null); setConsumeQty("");
+  }
+  function restockItem(){
+    var qty = parseFloat(restockQty);
+    if(!qty || qty<=0) return alert("Enter a valid quantity.");
+    setHostelInventory(function(p){return p.map(function(i){return i.id===restocking.id?{...i,currentStock:i.currentStock+qty}:i;});});
+    setRestocking(null); setRestockQty("");
+  }
+
+  function renderInventory(){
+    return(<div>
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {accessibleHostels.map(function(h){return <button key={h} style={{...S.btn(invFilter===h?"primary":"secondary"),fontSize:11}} onClick={function(){setInvFilter(h);}}>{h}</button>;})}
+          </div>
+          <button style={S.btn()} onClick={openAddItem}><span style={S.row}><Icon name="plus" size={13}/>Add Item</span></button>
+        </div>
+      </div>
+      <div style={{marginBottom:10}}>
+        <TableActionBar title={"Hostel Inventory - "+(invFilter||"All")} columns={["Item","Category","Hostel","Stock","Unit","Reorder Level"]}
+          rows={visibleInventory.map(function(i){return [i.name,i.category,i.hostel,i.currentStock,i.unit,i.reorderLevel];})}
+          filename={"Hostel_Inventory_"+(invFilter||"All")}/>
+      </div>
+      {visibleInventory.length===0?<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No items in {invFilter||"this hostel"} yet.</div>:(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+          {visibleInventory.map(function(item){
+            var low = item.currentStock<=item.reorderLevel;
+            return(
+              <div key={item.id} style={{...S.card,margin:0,borderLeft:"4px solid "+(low?"#DC2626":"#059669")}}>
+                <div style={{...S.row,justifyContent:"space-between"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#230E6A"}}>{item.name}</div>
+                  {low&&<span style={S.badge("red")}>⚠ Low Stock</span>}
+                </div>
+                <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{item.category} · {item.hostel}</div>
+                <div style={{fontSize:20,fontWeight:900,color:low?"#DC2626":"#059669",marginTop:8}}>{item.currentStock} <span style={{fontSize:12,fontWeight:600}}>{item.unit}</span></div>
+                <div style={{fontSize:10,color:C.textMuted}}>Reorder at {item.reorderLevel} {item.unit}</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+                  <button style={{...S.btn("blue"),fontSize:10,padding:"4px 8px"}} onClick={function(){setConsuming(item);setConsumeQty("");}}>📉 Log Use</button>
+                  <button style={{...S.btn("green"),fontSize:10,padding:"4px 8px"}} onClick={function(){setRestocking(item);setRestockQty("");}}>📈 Restock</button>
+                  <button style={{...S.btn("secondary"),fontSize:10,padding:"4px 8px"}} onClick={function(){openEditItem(item);}}>Edit</button>
+                  <button style={{...S.btn("danger"),fontSize:10,padding:"4px 8px"}} onClick={function(){deleteItem(item.id);}}>Delete</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Modal open={showItemForm} onClose={function(){setShowItemForm(false);}} title={editingItem?"Edit Item":"Add Inventory Item"}>
+        <div style={S.formGroup}><label style={S.label}>Item Name *</label><input style={S.input} value={itemForm.name} onChange={function(e){setItemForm(function(p){return{...p,name:e.target.value};});}} placeholder="e.g. Rice, Vegetable Oil, Toilet Roll..."/></div>
+        <div style={S.grid2}>
+          <div style={S.formGroup}><label style={S.label}>Category</label><select style={{...S.select,width:"100%"}} value={itemForm.category} onChange={function(e){setItemForm(function(p){return{...p,category:e.target.value};});}}>{HOSTEL_CATEGORIES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+          <div style={S.formGroup}><label style={S.label}>Hostel/Location</label><select style={{...S.select,width:"100%"}} value={itemForm.hostel} onChange={function(e){setItemForm(function(p){return{...p,hostel:e.target.value};});}}>{accessibleHostels.map(function(h){return <option key={h}>{h}</option>;})}</select></div>
+        </div>
+        <div style={S.grid3}>
+          <div style={S.formGroup}><label style={S.label}>Current Stock</label><input type="number" style={S.input} value={itemForm.currentStock} onChange={function(e){setItemForm(function(p){return{...p,currentStock:e.target.value};});}}/></div>
+          <div style={S.formGroup}><label style={S.label}>Unit</label><select style={{...S.select,width:"100%"}} value={itemForm.unit} onChange={function(e){setItemForm(function(p){return{...p,unit:e.target.value};});}}>{HOSTEL_UNITS.map(function(u){return <option key={u}>{u}</option>;})}</select></div>
+          <div style={S.formGroup}><label style={S.label}>Reorder Level</label><input type="number" style={S.input} value={itemForm.reorderLevel} onChange={function(e){setItemForm(function(p){return{...p,reorderLevel:e.target.value};});}}/></div>
+        </div>
+        <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={function(){setShowItemForm(false);}}>Cancel</button><button style={S.btn()} onClick={saveItem}>{editingItem?"Save Changes":"Add Item"}</button></div>
+      </Modal>
+
+      <Modal open={!!consuming} onClose={function(){setConsuming(null);}} title={"Log Consumption — "+(consuming?consuming.name:"")}>
+        {consuming&&<div>
+          <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>Current stock: {consuming.currentStock} {consuming.unit}</div>
+          <div style={S.formGroup}><label style={S.label}>Quantity Used *</label><input type="number" style={S.input} value={consumeQty} onChange={function(e){setConsumeQty(e.target.value);}} placeholder={"e.g. 5 "+consuming.unit}/></div>
+          <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={function(){setConsuming(null);}}>Cancel</button><button style={S.btn("blue")} onClick={logConsumption}>Log Consumption</button></div>
+        </div>}
+      </Modal>
+
+      <Modal open={!!restocking} onClose={function(){setRestocking(null);}} title={"Restock — "+(restocking?restocking.name:"")}>
+        {restocking&&<div>
+          <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>Current stock: {restocking.currentStock} {restocking.unit}</div>
+          <div style={S.formGroup}><label style={S.label}>Quantity Added *</label><input type="number" style={S.input} value={restockQty} onChange={function(e){setRestockQty(e.target.value);}} placeholder={"e.g. 25 "+restocking.unit}/></div>
+          <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={function(){setRestocking(null);}}>Cancel</button><button style={S.btn("green")} onClick={restockItem}>Add Stock</button></div>
+        </div>}
+      </Modal>
+    </div>);
+  }
+
+  // ═══════════════════ REQUESTS ═══════════════════
+  var _showReqForm = useState(false); var showReqForm = _showReqForm[0]; var setShowReqForm = _showReqForm[1];
+  var emptyReqForm = {hostel:accessibleHostels[0], itemName:"", category:"Food", quantityRequested:"", unit:"kg", urgency:"Normal", reason:"", costPerUnit:""};
+  var _reqForm = useState(emptyReqForm); var reqForm = _reqForm[0]; var setReqForm = _reqForm[1];
+
+  var visibleRequests = hostelRequests.filter(function(r){return accessibleHostels.includes(r.hostel);}).sort(function(a,b){return b.requestedAt.localeCompare(a.requestedAt);});
+
+  function submitRequest(){
+    if(!reqForm.itemName.trim()) return alert("Item name is required.");
+    if(!parseFloat(reqForm.quantityRequested)) return alert("Enter a valid quantity.");
+    setHostelRequests(function(p){return [{...reqForm, id:genId(), quantityRequested:parseFloat(reqForm.quantityRequested), costPerUnit:parseFloat(reqForm.costPerUnit)||0,
+      status:"Pending", requestedBy:currentUser.name, requestedAt:today()}, ...p];});
+    setReqForm(emptyReqForm); setShowReqForm(false);
+  }
+
+  function approveAndFulfill(req){
+    var costStr = window.prompt("Confirm total cost for this request (₦):", (req.costPerUnit*req.quantityRequested)||"");
+    if(costStr===null) return;
+    var totalCost = parseFloat(costStr)||0;
+    var expId = genId();
+
+    setHostelRequests(function(p){return p.map(function(r){return r.id===req.id?{...r,status:"Fulfilled",approvedBy:currentUser.name,approvedAt:today(),totalCost:totalCost,linkedExpenditureId:expId}:r;});});
+
+    // Bump matching inventory item (or create one) so stock reflects the fulfilled request
+    setHostelInventory(function(p){
+      var existing = p.find(function(i){return i.hostel===req.hostel && i.name.toLowerCase()===req.itemName.toLowerCase();});
+      if(existing) return p.map(function(i){return i.id===existing.id?{...i,currentStock:i.currentStock+req.quantityRequested}:i;});
+      return [...p, {id:genId(), name:req.itemName, category:req.category, unit:req.unit, currentStock:req.quantityRequested, reorderLevel:0, hostel:req.hostel}];
+    });
+
+    if(totalCost>0){
+      setExpenditure(function(p){return [...p, {id:expId, date:today(), amount:totalCost, category:"Hostel & Kitchen Supplies", reason:req.itemName+" ("+req.quantityRequested+" "+req.unit+") — "+req.hostel, recordedBy:currentUser.name}];});
+    }
+  }
+  function rejectRequest(req){
+    var reason = window.prompt("Reason for rejecting this request (optional):", "");
+    if(reason===null) return;
+    setHostelRequests(function(p){return p.map(function(r){return r.id===req.id?{...r,status:"Rejected",approvedBy:currentUser.name,approvedAt:today(),rejectionReason:reason}:r;});});
+  }
+
+  function renderRequests(){
+    return(<div>
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={{...S.row,justifyContent:"space-between"}}>
+          <div style={S.cardTitle}>Raw Material / Supply Requests</div>
+          <button style={S.btn()} onClick={function(){setReqForm({...emptyReqForm,hostel:accessibleHostels[0]});setShowReqForm(true);}}><span style={S.row}><Icon name="plus" size={13}/>New Request</span></button>
+        </div>
+      </div>
+      <div style={{marginBottom:10}}>
+        <TableActionBar title="Hostel Requests" columns={["Hostel","Item","Qty","Status","Requested By","Date"]}
+          rows={visibleRequests.map(function(r){return [r.hostel,r.itemName,r.quantityRequested+" "+r.unit,r.status,r.requestedBy,formatDate(r.requestedAt)];})}
+          filename="Hostel_Requests"/>
+      </div>
+      {visibleRequests.length===0?<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No requests yet.</div>:
+        visibleRequests.map(function(r){
+          return(
+            <div key={r.id} style={S.card}>
+              <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{...S.row,gap:8}}>
+                    <span style={{fontSize:13,fontWeight:700,color:"#230E6A"}}>{r.itemName}</span>
+                    <span style={S.badge("blue")}>{r.hostel}</span>
+                    <span style={S.badge(r.urgency==="Urgent"?"red":"yellow")}>{r.urgency}</span>
+                    <span style={S.badge(r.status==="Fulfilled"?"green":r.status==="Rejected"?"red":"yellow")}>{r.status}</span>
+                  </div>
+                  <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>Qty: {r.quantityRequested} {r.unit} · Requested by {r.requestedBy} on {formatDate(r.requestedAt)}</div>
+                  {r.reason&&<div style={{fontSize:12,marginTop:4}}>{r.reason}</div>}
+                  {r.status==="Fulfilled"&&<div style={{fontSize:11,color:"#059669",marginTop:4}}>✓ Approved by {r.approvedBy} · Cost: ₦{(r.totalCost||0).toLocaleString()}</div>}
+                  {r.status==="Rejected"&&<div style={{fontSize:11,color:"#DC2626",marginTop:4}}>✗ Rejected by {r.approvedBy}{r.rejectionReason?": "+r.rejectionReason:""}</div>}
+                </div>
+                {canApprove&&r.status==="Pending"&&<div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button style={{...S.btn("green"),fontSize:11}} onClick={function(){approveAndFulfill(r);}}>✓ Approve &amp; Fulfill</button>
+                  <button style={{...S.btn("danger"),fontSize:11}} onClick={function(){rejectRequest(r);}}>✗ Reject</button>
+                </div>}
+              </div>
+            </div>
+          );
+        })}
+
+      <Modal open={showReqForm} onClose={function(){setShowReqForm(false);}} title="New Supply Request">
+        <div style={S.grid2}>
+          <div style={S.formGroup}><label style={S.label}>Hostel/Location *</label><select style={{...S.select,width:"100%"}} value={reqForm.hostel} onChange={function(e){setReqForm(function(p){return{...p,hostel:e.target.value};});}}>{accessibleHostels.map(function(h){return <option key={h}>{h}</option>;})}</select></div>
+          <div style={S.formGroup}><label style={S.label}>Category</label><select style={{...S.select,width:"100%"}} value={reqForm.category} onChange={function(e){setReqForm(function(p){return{...p,category:e.target.value};});}}>{HOSTEL_CATEGORIES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+        </div>
+        <div style={S.formGroup}><label style={S.label}>Item Name *</label><input style={S.input} value={reqForm.itemName} onChange={function(e){setReqForm(function(p){return{...p,itemName:e.target.value};});}} placeholder="e.g. Rice, Groundnut Oil, Detergent..."/></div>
+        <div style={S.grid3}>
+          <div style={S.formGroup}><label style={S.label}>Quantity *</label><input type="number" style={S.input} value={reqForm.quantityRequested} onChange={function(e){setReqForm(function(p){return{...p,quantityRequested:e.target.value};});}}/></div>
+          <div style={S.formGroup}><label style={S.label}>Unit</label><select style={{...S.select,width:"100%"}} value={reqForm.unit} onChange={function(e){setReqForm(function(p){return{...p,unit:e.target.value};});}}>{HOSTEL_UNITS.map(function(u){return <option key={u}>{u}</option>;})}</select></div>
+          <div style={S.formGroup}><label style={S.label}>Est. Cost/Unit (₦)</label><input type="number" style={S.input} value={reqForm.costPerUnit} onChange={function(e){setReqForm(function(p){return{...p,costPerUnit:e.target.value};});}}/></div>
+        </div>
+        <div style={S.formGroup}><label style={S.label}>Urgency</label><select style={{...S.select,width:"100%"}} value={reqForm.urgency} onChange={function(e){setReqForm(function(p){return{...p,urgency:e.target.value};});}}><option>Normal</option><option>Urgent</option></select></div>
+        <div style={S.formGroup}><label style={S.label}>Reason / Notes</label><textarea style={{...S.textarea,minHeight:60}} value={reqForm.reason} onChange={function(e){setReqForm(function(p){return{...p,reason:e.target.value};});}}/></div>
+        <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={function(){setShowReqForm(false);}}>Cancel</button><button style={S.btn()} onClick={submitRequest}>Submit Request</button></div>
+      </Modal>
+    </div>);
+  }
+
+  // ═══════════════════ ROOMS & ALLOCATION ═══════════════════
+  var _roomHostel = useState("Boys Hostel"); var roomHostel = _roomHostel[0]; var setRoomHostel = _roomHostel[1];
+  var _showRoomForm = useState(false); var showRoomForm = _showRoomForm[0]; var setShowRoomForm = _showRoomForm[1];
+  var emptyRoomForm = {hostel:"Boys Hostel", roomName:"", capacity:4};
+  var _roomForm = useState(emptyRoomForm); var roomForm = _roomForm[0]; var setRoomForm = _roomForm[1];
+  var _assigningRoom = useState(null); var assigningRoom = _assigningRoom[0]; var setAssigningRoom = _assigningRoom[1];
+  var _assignStudentId = useState(""); var assignStudentId = _assignStudentId[0]; var setAssignStudentId = _assignStudentId[1];
+
+  var roomsForHostel = hostelRooms.filter(function(r){return r.hostel===roomHostel;});
+  var allocatedIds = hostelRooms.reduce(function(acc,r){return acc.concat(r.occupantIds||[]);},[]);
+  var unallocatedBoarders = boarders.filter(function(s){return s.gender===boysGirlsFor(roomHostel) && allocatedIds.indexOf(s.id)===-1;});
+
+  function saveRoom(){
+    if(!roomForm.roomName.trim()) return alert("Room name/number is required.");
+    setHostelRooms(function(p){return [...p, {...roomForm, id:genId(), capacity:parseInt(roomForm.capacity)||1, occupantIds:[]}];});
+    setShowRoomForm(false);
+  }
+  function deleteRoom(id){
+    if(window.confirm("Delete this room? Occupants will need to be reassigned.")) setHostelRooms(function(p){return p.filter(function(r){return r.id!==id;});});
+  }
+  function assignToRoom(){
+    if(!assignStudentId) return;
+    setHostelRooms(function(p){return p.map(function(r){return r.id===assigningRoom.id?{...r,occupantIds:[...(r.occupantIds||[]),assignStudentId]}:r;});});
+    setAssignStudentId("");
+  }
+  function removeFromRoom(room, studentId){
+    setHostelRooms(function(p){return p.map(function(r){return r.id===room.id?{...r,occupantIds:(r.occupantIds||[]).filter(function(id){return id!==studentId;})}:r;});});
+  }
+
+  function renderRooms(){
+    return(<div>
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+          <div style={{display:"flex",gap:6}}>
+            {["Boys Hostel","Girls Hostel"].map(function(h){return <button key={h} style={{...S.btn(roomHostel===h?"primary":"secondary"),fontSize:11}} onClick={function(){setRoomHostel(h);}}>{h}</button>;})}
+          </div>
+          <button style={S.btn()} onClick={function(){setRoomForm({...emptyRoomForm,hostel:roomHostel});setShowRoomForm(true);}}><span style={S.row}><Icon name="plus" size={13}/>Add Room</span></button>
+        </div>
+        <div style={{fontSize:11,color:C.textMuted,marginTop:8}}>{roomsForHostel.length} rooms · {roomsForHostel.reduce(function(a,r){return a+(r.occupantIds||[]).length;},0)} of {roomsForHostel.reduce(function(a,r){return a+r.capacity;},0)} beds occupied · {unallocatedBoarders.length} unallocated boarders in this hostel</div>
+      </div>
+      <div style={{marginBottom:10}}>
+        <TableActionBar title={"Hostel Rooms - "+roomHostel} columns={["Room","Capacity","Occupants"]}
+          rows={roomsForHostel.map(function(r){return [r.roomName,r.capacity,(r.occupantIds||[]).length];})}
+          filename={"Hostel_Rooms_"+roomHostel}/>
+      </div>
+      {roomsForHostel.length===0?<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No rooms set up for {roomHostel} yet.</div>:(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
+          {roomsForHostel.map(function(room){
+            var occupants = (room.occupantIds||[]).map(function(id){return students.find(function(s){return s.id===id;});}).filter(Boolean);
+            var full = occupants.length>=room.capacity;
+            return(
+              <div key={room.id} style={{...S.card,margin:0,borderLeft:"4px solid "+(full?"#D97706":"#059669")}}>
+                <div style={{...S.row,justifyContent:"space-between"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#230E6A"}}>{room.roomName}</div>
+                  <button style={{...S.btn("danger"),fontSize:9,padding:"2px 6px"}} onClick={function(){deleteRoom(room.id);}}>🗑</button>
+                </div>
+                <div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>{occupants.length}/{room.capacity} beds{full?" — FULL":""}</div>
+                {occupants.map(function(s){return(
+                  <div key={s.id} style={{...S.row,justifyContent:"space-between",fontSize:11,padding:"3px 0",borderBottom:"1px solid "+C.border}}>
+                    <span>{s.surname} {s.firstname} ({s.class}{s.arm})</span>
+                    <button style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:12}} onClick={function(){removeFromRoom(room,s.id);}}>✕</button>
+                  </div>
+                );})}
+                {!full&&<button style={{...S.btn("secondary"),fontSize:10,marginTop:8,width:"100%"}} onClick={function(){setAssigningRoom(room);setAssignStudentId("");}}>+ Assign Boarder</button>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Modal open={showRoomForm} onClose={function(){setShowRoomForm(false);}} title="Add Room">
+        <div style={S.formGroup}><label style={S.label}>Hostel</label><select style={{...S.select,width:"100%"}} value={roomForm.hostel} onChange={function(e){setRoomForm(function(p){return{...p,hostel:e.target.value};});}}><option>Boys Hostel</option><option>Girls Hostel</option></select></div>
+        <div style={S.formGroup}><label style={S.label}>Room Name/Number *</label><input style={S.input} value={roomForm.roomName} onChange={function(e){setRoomForm(function(p){return{...p,roomName:e.target.value};});}} placeholder="e.g. Block A Room 3"/></div>
+        <div style={S.formGroup}><label style={S.label}>Capacity (beds)</label><input type="number" style={S.input} value={roomForm.capacity} onChange={function(e){setRoomForm(function(p){return{...p,capacity:e.target.value};});}}/></div>
+        <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={function(){setShowRoomForm(false);}}>Cancel</button><button style={S.btn()} onClick={saveRoom}>Add Room</button></div>
+      </Modal>
+
+      <Modal open={!!assigningRoom} onClose={function(){setAssigningRoom(null);}} title={"Assign Boarder — "+(assigningRoom?assigningRoom.roomName:"")}>
+        {assigningRoom&&<div>
+          <select style={{...S.select,width:"100%"}} value={assignStudentId} onChange={function(e){setAssignStudentId(e.target.value);}}>
+            <option value="">— Select unallocated boarder —</option>
+            {unallocatedBoarders.map(function(s){return <option key={s.id} value={s.id}>{s.surname} {s.firstname} ({s.class}{s.arm})</option>;})}
+          </select>
+          {unallocatedBoarders.length===0&&<div style={{fontSize:11,color:C.textMuted,marginTop:8}}>No unallocated boarders left in {roomHostel}.</div>}
+          <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={function(){setAssigningRoom(null);}}>Cancel</button><button style={S.btn()} disabled={!assignStudentId} onClick={assignToRoom}>Assign</button></div>
+        </div>}
+      </Modal>
+    </div>);
+  }
+
+  // ═══════════════════ ROLL CALL ═══════════════════
+  var _rcHostel = useState("Boys Hostel"); var rcHostel = _rcHostel[0]; var setRcHostel = _rcHostel[1];
+  var _rcDate = useState(today()); var rcDate = _rcDate[0]; var setRcDate = _rcDate[1];
+
+  var rcBoarders = boarders.filter(function(s){return s.gender===boysGirlsFor(rcHostel);});
+  var existingRc = hostelRollcall.find(function(r){return r.hostel===rcHostel && r.date===rcDate;});
+  var rcPresent = existingRc ? (existingRc.presentStudentIds||[]) : [];
+
+  function toggleRollcall(studentId){
+    var isPresent = rcPresent.indexOf(studentId)!==-1;
+    var newPresent = isPresent ? rcPresent.filter(function(id){return id!==studentId;}) : [...rcPresent, studentId];
+    if(existingRc){
+      setHostelRollcall(function(p){return p.map(function(r){return r.id===existingRc.id?{...r,presentStudentIds:newPresent,takenBy:currentUser.name}:r;});});
+    } else {
+      setHostelRollcall(function(p){return [...p, {id:genId(), hostel:rcHostel, date:rcDate, presentStudentIds:newPresent, takenBy:currentUser.name}];});
+    }
+  }
+  function markAll(present){
+    var ids = present ? rcBoarders.map(function(s){return s.id;}) : [];
+    if(existingRc){
+      setHostelRollcall(function(p){return p.map(function(r){return r.id===existingRc.id?{...r,presentStudentIds:ids,takenBy:currentUser.name}:r;});});
+    } else {
+      setHostelRollcall(function(p){return [...p, {id:genId(), hostel:rcHostel, date:rcDate, presentStudentIds:ids, takenBy:currentUser.name}];});
+    }
+  }
+
+  function renderRollcall(){
+    var absentCount = rcBoarders.length - rcPresent.length;
+    return(<div>
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            {["Boys Hostel","Girls Hostel"].map(function(h){return <button key={h} style={{...S.btn(rcHostel===h?"primary":"secondary"),fontSize:11}} onClick={function(){setRcHostel(h);}}>{h}</button>;})}
+            <input style={S.input} type="date" value={rcDate} onChange={function(e){setRcDate(e.target.value);}}/>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <button style={{...S.btn("green"),fontSize:11}} onClick={function(){markAll(true);}}>Mark All Present</button>
+            <button style={{...S.btn("danger"),fontSize:11}} onClick={function(){markAll(false);}}>Clear All</button>
+          </div>
+        </div>
+        <div style={{fontSize:11,color:C.textMuted,marginTop:8}}>{rcPresent.length} present · {absentCount} absent · {rcBoarders.length} total boarders</div>
+      </div>
+      <div style={{marginBottom:10}}>
+        <TableActionBar title={"Roll Call - "+rcHostel+" - "+formatDate(rcDate)} columns={["Student","Class","Status"]}
+          rows={rcBoarders.map(function(s){return [s.surname+" "+s.firstname, s.class+s.arm, rcPresent.indexOf(s.id)!==-1?"Present":"Absent"];})}
+          filename={"Rollcall_"+rcHostel+"_"+rcDate}/>
+      </div>
+      {rcBoarders.length===0?<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No boarders found for {rcHostel}.</div>:(
+        <div style={S.card}>
+          <table style={S.table}><thead><tr>{["Student","Class","Status"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
+            <tbody>{rcBoarders.map(function(s){
+              var present = rcPresent.indexOf(s.id)!==-1;
+              return(
+                <tr key={s.id}>
+                  <td style={{...S.td,fontWeight:600}}>{s.surname} {s.firstname}</td>
+                  <td style={S.td}>{s.class}{s.arm}</td>
+                  <td style={S.tdC}><button style={{...S.btn(present?"green":"danger"),fontSize:10,padding:"3px 10px"}} onClick={function(){toggleRollcall(s.id);}}>{present?"✓ Present":"✗ Absent"}</button></td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+      )}
+    </div>);
+  }
+
+  // ═══════════════════ INCIDENTS ═══════════════════
+  var _showIncForm = useState(false); var showIncForm = _showIncForm[0]; var setShowIncForm = _showIncForm[1];
+  var emptyIncForm = {hostel:"Boys Hostel", studentId:"", incidentType:"", severity:"Minor", description:"", actionTaken:"", status:"Open"};
+  var _incForm = useState(emptyIncForm); var incForm = _incForm[0]; var setIncForm = _incForm[1];
+
+  function saveIncident(){
+    var stu = students.find(function(s){return s.id===incForm.studentId;});
+    if(!stu) return alert("Select a student.");
+    if(!incForm.incidentType.trim()) return alert("Incident type is required.");
+    setHostelIncidents(function(p){return [{...incForm, id:genId(), studentName:stu.surname+" "+stu.firstname, class:stu.class+stu.arm, date:today(), reportedBy:currentUser.name}, ...p];});
+    setIncForm(emptyIncForm); setShowIncForm(false);
+  }
+  function toggleIncidentStatus(inc){
+    setHostelIncidents(function(p){return p.map(function(i){return i.id===inc.id?{...i,status:i.status==="Open"?"Resolved":"Open"}:i;});});
+  }
+
+  function renderIncidents(){
+    var visibleIncidents = hostelIncidents.filter(function(i){return ["Boys Hostel","Girls Hostel"].includes(i.hostel);}).sort(function(a,b){return b.date.localeCompare(a.date);});
+    var incidentStudents = students.filter(function(s){return s.active && s.boardingType==="Boarder" && s.gender===boysGirlsFor(incForm.hostel);});
+    return(<div>
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={{...S.row,justifyContent:"space-between"}}>
+          <div style={S.cardTitle}>Hostel Discipline / Incidents</div>
+          <button style={S.btn()} onClick={function(){setIncForm(emptyIncForm);setShowIncForm(true);}}><span style={S.row}><Icon name="plus" size={13}/>Log Incident</span></button>
+        </div>
+      </div>
+      <div style={{marginBottom:10}}>
+        <TableActionBar title="Hostel Incidents" columns={["Student","Hostel","Type","Severity","Status","Date"]}
+          rows={visibleIncidents.map(function(i){return [i.studentName,i.hostel,i.incidentType,i.severity,i.status,formatDate(i.date)];})}
+          filename="Hostel_Incidents"/>
+      </div>
+      {visibleIncidents.length===0?<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No incidents logged.</div>:
+        visibleIncidents.map(function(inc){
+          return(
+            <div key={inc.id} style={S.card}>
+              <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{...S.row,gap:8}}>
+                    <span style={{fontSize:13,fontWeight:700,color:"#230E6A"}}>{inc.studentName}</span>
+                    <span style={S.badge("blue")}>{inc.hostel}</span>
+                    <span style={S.badge(inc.severity==="Severe"?"red":inc.severity==="Moderate"?"yellow":"green")}>{inc.severity}</span>
+                    <span style={S.badge(inc.status==="Open"?"red":"green")}>{inc.status}</span>
+                  </div>
+                  <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{inc.class} · {formatDate(inc.date)} · Reported by {inc.reportedBy}</div>
+                  <div style={{fontSize:12,marginTop:4}}><b>{inc.incidentType}:</b> {inc.description}</div>
+                  {inc.actionTaken&&<div style={{fontSize:11,color:C.textMuted,marginTop:2}}>Action taken: {inc.actionTaken}</div>}
+                </div>
+                <button style={{...S.btn(inc.status==="Open"?"green":"secondary"),fontSize:10,flexShrink:0}} onClick={function(){toggleIncidentStatus(inc);}}>{inc.status==="Open"?"Mark Resolved":"Reopen"}</button>
+              </div>
+            </div>
+          );
+        })}
+
+      <Modal open={showIncForm} onClose={function(){setShowIncForm(false);}} title="Log Hostel Incident">
+        <div style={S.grid2}>
+          <div style={S.formGroup}><label style={S.label}>Hostel *</label><select style={{...S.select,width:"100%"}} value={incForm.hostel} onChange={function(e){setIncForm(function(p){return{...p,hostel:e.target.value,studentId:""};});}}><option>Boys Hostel</option><option>Girls Hostel</option></select></div>
+          <div style={S.formGroup}><label style={S.label}>Student *</label><select style={{...S.select,width:"100%"}} value={incForm.studentId} onChange={function(e){setIncForm(function(p){return{...p,studentId:e.target.value};});}}><option value="">— Select —</option>{incidentStudents.map(function(s){return <option key={s.id} value={s.id}>{s.surname} {s.firstname} ({s.class}{s.arm})</option>;})}</select></div>
+        </div>
+        <div style={S.grid2}>
+          <div style={S.formGroup}><label style={S.label}>Incident Type *</label><input style={S.input} value={incForm.incidentType} onChange={function(e){setIncForm(function(p){return{...p,incidentType:e.target.value};});}} placeholder="e.g. Lights-out violation, Unauthorized outing..."/></div>
+          <div style={S.formGroup}><label style={S.label}>Severity</label><select style={{...S.select,width:"100%"}} value={incForm.severity} onChange={function(e){setIncForm(function(p){return{...p,severity:e.target.value};});}}><option>Minor</option><option>Moderate</option><option>Severe</option></select></div>
+        </div>
+        <div style={S.formGroup}><label style={S.label}>Description</label><textarea style={{...S.textarea,minHeight:60}} value={incForm.description} onChange={function(e){setIncForm(function(p){return{...p,description:e.target.value};});}}/></div>
+        <div style={S.formGroup}><label style={S.label}>Action Taken</label><textarea style={{...S.textarea,minHeight:50}} value={incForm.actionTaken} onChange={function(e){setIncForm(function(p){return{...p,actionTaken:e.target.value};});}}/></div>
+        <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={function(){setShowIncForm(false);}}>Cancel</button><button style={S.btn()} onClick={saveIncident}>Log Incident</button></div>
+      </Modal>
+    </div>);
+  }
+
+  return(
+    <div>
+      {isKitchenRestricted&&<div style={{...S.card,marginBottom:14,background:"#FFFBEB",border:"1px solid #F0C060"}}>
+        <div style={{fontSize:11,color:"#92400E"}}>ℹ You have Hostel Master/Mistress access — Boys/Girls Hostel only. Kitchen inventory and requests are not shown.</div>
+      </div>}
+      <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:"2px solid "+C.border,flexWrap:"wrap"}}>
+        {[["inventory","📦 Inventory"],["requests","📝 Requests"],["rooms","🛏 Rooms"],["rollcall","✅ Roll Call"],["incidents","⚠ Incidents"]].map(function(pair){
+          return <button key={pair[0]} onClick={function(){setTab(pair[0]);}} style={{...S.btn(tab===pair[0]?"primary":"secondary"),borderRadius:"6px 6px 0 0",marginBottom:-2,fontSize:11,padding:"6px 14px"}}>{pair[1]}</button>;
+        })}
+      </div>
+      {tab==="inventory"?renderInventory():null}
+      {tab==="requests"?renderRequests():null}
+      {tab==="rooms"?renderRooms():null}
+      {tab==="rollcall"?renderRollcall():null}
+      {tab==="incidents"?renderIncidents():null}
+    </div>
+  );
+}
+
 
 function ParentPortal({student, students, results, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, exams, gallery, parentToken, onRefresh, onLogout}){
   var _tab = useState("home"); var tab = _tab[0]; var setTab = _tab[1];
@@ -11100,6 +11590,12 @@ export default function App(){
   const [clinic,_setClinic]=useState(SEED_CLINIC);
   const [counsellingSessions,_setCounsellingSessions]=useState([]);
   const [classRemarks,_setClassRemarks]=useState([]);
+  const [hostelInventory,_setHostelInventory]=useState([]);
+  const [hostelConsumption,_setHostelConsumption]=useState([]);
+  const [hostelRequests,_setHostelRequests]=useState([]);
+  const [hostelRooms,_setHostelRooms]=useState([]);
+  const [hostelRollcall,_setHostelRollcall]=useState([]);
+  const [hostelIncidents,_setHostelIncidents]=useState([]);
   const [exams,_setExams]=useState(SEED_EXAMS);
   const [examMarks,_setExamMarks]=useState({});
   const [cbtEnabled,setCbtEnabled]=useState(false);
@@ -11127,6 +11623,12 @@ export default function App(){
   const setClinic     = makeSynced("clinic",     _setClinic,     false);
   const setCounsellingSessions = makeSynced("counselling", _setCounsellingSessions, false);
   const setClassRemarks = makeSynced("class_remarks", _setClassRemarks, false);
+  const setHostelInventory = makeSynced("hostel_inventory", _setHostelInventory, false);
+  const setHostelConsumption = makeSynced("hostel_consumption", _setHostelConsumption, false);
+  const setHostelRequests = makeSynced("hostel_requests", _setHostelRequests, false);
+  const setHostelRooms = makeSynced("hostel_rooms", _setHostelRooms, false);
+  const setHostelRollcall = makeSynced("hostel_rollcall", _setHostelRollcall, false);
+  const setHostelIncidents = makeSynced("hostel_incidents", _setHostelIncidents, false);
   const setExams       = makeSynced("exams",      _setExams,      false);
   const setExamMarks   = makeSynced("exam_marks", _setExamMarks,  true);
 
@@ -11187,13 +11689,15 @@ export default function App(){
           dbStudents, dbStaff, dbAttendance, dbResults, dbFees, dbExpenditure,
           dbLessons, dbAssignments, dbSubmissions, dbMessages, dbDiary,
           dbElibrary, dbConduct, dbTimetable, dbPromotions, dbClinic,
-          dbCounselling, dbExams, dbExamMarks, dbClassRemarks
+          dbCounselling, dbExams, dbExamMarks, dbClassRemarks,
+          dbHostelInventory, dbHostelConsumption, dbHostelRequests, dbHostelRooms, dbHostelRollcall, dbHostelIncidents
         ] = await Promise.all([
           sbLoad("students"), sbLoad("staff"), sbLoad("attendance"), sbLoad("results"),
           sbLoad("fees"), sbLoad("expenditure"), sbLoad("lessons"), sbLoad("assignments"),
           sbLoad("submissions"), sbLoad("messages"), sbLoad("diary"),
           sbLoad("elibrary"), sbLoad("conduct"), sbLoad("timetable"), sbLoad("promotions"), sbLoad("clinic"),
-          sbLoad("counselling"), sbLoad("exams"), sbLoad("exam_marks"), sbLoad("class_remarks")
+          sbLoad("counselling"), sbLoad("exams"), sbLoad("exam_marks"), sbLoad("class_remarks"),
+          sbLoad("hostel_inventory"), sbLoad("hostel_consumption"), sbLoad("hostel_requests"), sbLoad("hostel_rooms"), sbLoad("hostel_rollcall"), sbLoad("hostel_incidents")
         ]);
 
         if(dbStudents && dbStudents.length)      _setStudents(dbStudents);
@@ -11232,6 +11736,18 @@ export default function App(){
         markSynced("counselling", dbCounselling);
         if(dbClassRemarks && dbClassRemarks.length) _setClassRemarks(dbClassRemarks);
         markSynced("class_remarks", dbClassRemarks);
+        if(dbHostelInventory && dbHostelInventory.length) _setHostelInventory(dbHostelInventory);
+        markSynced("hostel_inventory", dbHostelInventory);
+        if(dbHostelConsumption && dbHostelConsumption.length) _setHostelConsumption(dbHostelConsumption);
+        markSynced("hostel_consumption", dbHostelConsumption);
+        if(dbHostelRequests && dbHostelRequests.length) _setHostelRequests(dbHostelRequests);
+        markSynced("hostel_requests", dbHostelRequests);
+        if(dbHostelRooms && dbHostelRooms.length) _setHostelRooms(dbHostelRooms);
+        markSynced("hostel_rooms", dbHostelRooms);
+        if(dbHostelRollcall && dbHostelRollcall.length) _setHostelRollcall(dbHostelRollcall);
+        markSynced("hostel_rollcall", dbHostelRollcall);
+        if(dbHostelIncidents && dbHostelIncidents.length) _setHostelIncidents(dbHostelIncidents);
+        markSynced("hostel_incidents", dbHostelIncidents);
         if(dbExams && dbExams.length)            _setExams(dbExams);
         markSynced("exams", dbExams);
         if(dbExamMarks && typeof dbExamMarks==="object") _setExamMarks(dbExamMarks);
@@ -11397,6 +11913,15 @@ export default function App(){
         {page==="gallery"&&(userCanAccess(currentUser,"gallery")?<GalleryModule gallery={gallery} setGallery={setGallery} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="elibrary"&&<ELibraryModule elibrary={elibrary} setElibrary={setElibrary} currentUser={currentUser} students={students} staff={staff}/>}
         {page==="clinic"&&(userCanAccess(currentUser,"clinic")?<ClinicModule students={students} staff={staff} clinic={clinic} setClinic={setClinic} currentUser={currentUser} settings={settings}/>:<AccessDenied/>)}
+        {page==="hostel"&&(userCanAccess(currentUser,"hostel")?<HostelModule students={students} staff={staff} settings={settings} currentUser={currentUser}
+          hostelInventory={hostelInventory} setHostelInventory={setHostelInventory}
+          hostelConsumption={hostelConsumption} setHostelConsumption={setHostelConsumption}
+          hostelRequests={hostelRequests} setHostelRequests={setHostelRequests}
+          hostelRooms={hostelRooms} setHostelRooms={setHostelRooms}
+          hostelRollcall={hostelRollcall} setHostelRollcall={setHostelRollcall}
+          hostelIncidents={hostelIncidents} setHostelIncidents={setHostelIncidents}
+          expenditure={expenditure} setExpenditure={setExpenditure}
+        />:<AccessDenied/>)}
         {page==="messages"&&(userCanAccess(currentUser,"messages")?<MessagesModule students={students} staff={staff} messages={messages} setMessages={setMessages}/>:<AccessDenied/>)}
         {page==="counsellor"&&(userCanAccess(currentUser,"counsellor")?<CounsellorModule students={students} staff={staff} results={results} conduct={conduct} clinic={clinic} attendance={attendance} settings={settings} currentUser={currentUser} counsellingSessions={counsellingSessions} setCounsellingSessions={setCounsellingSessions}/>:<AccessDenied/>)}
         {page==="welfare"&&(userCanAccess(currentUser,"welfare")?<WelfareModule students={students} staff={staff} conduct={conduct} setConduct={setConduct} messages={messages} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}

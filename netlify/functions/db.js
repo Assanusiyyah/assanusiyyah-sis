@@ -10,7 +10,8 @@ const ALLOWED_TABLES = [
   "students","staff","attendance","results","fees","expenditure",
   "lessons","assignments","submissions","messages","diary","gallery",
   "elibrary","conduct","settings","timetable","promotions","clinic",
-  "counselling","exams","exam_marks","admissions","school_assets","class_remarks"
+  "counselling","exams","exam_marks","admissions","school_assets","class_remarks",
+  "hostel_inventory","hostel_consumption","hostel_requests","hostel_rooms","hostel_rollcall","hostel_incidents"
 ];
 
 // The login screen needs to read these, unauthenticated, before anyone has
