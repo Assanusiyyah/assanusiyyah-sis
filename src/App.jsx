@@ -6686,10 +6686,11 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
 }
 
 
-function ParentPortal({student, students, results, attendance, fees, settings, diary, elibrary, onLogout}){
+function ParentPortal({student, students, results, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, onLogout}){
   var _tab = useState("home"); var tab = _tab[0]; var setTab = _tab[1];
   var _selSess = useState(CURRENT_SESSION); var selSess = _selSess[0]; var setSelSess = _selSess[1];
   var _selTerm = useState(CURRENT_TERM); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
+  var _selLesson = useState(null); var selLesson = _selLesson[0]; var setSelLesson = _selLesson[1];
 
   var logo = settings.schoolLogo || "";
 
@@ -6728,8 +6729,16 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
   var NAV_TABS = [
     ["home","🏠 Home"],["results","📝 Results"],
     ["attendance","📋 Attendance"],["fees","💰 Fees"],
+    ["lessons","📖 Lesson Notes"],["assignments","📝 Assignments"],
     ["notices","📢 Notices"],["library","📚 Library"],
   ];
+
+  // ── Lesson notes & assignments (read-only for parents) ──
+  var classLessons = (lessons||[]).filter(function(l){ return l.class === student.class; });
+  var classAssignments = (assignments||[]).filter(function(a){ return a.class === student.class; });
+  function childSubmission(assignmentId){
+    return (submissions||[]).find(function(s){ return s.assignmentId===assignmentId && s.studentId===student.id; });
+  }
 
   var CAT_COLOR = {A1:"green",B2:"green",B3:"green",C4:"yellow",C5:"yellow",C6:"yellow",D7:"red",E8:"red",F9:"red"};
 
@@ -7051,6 +7060,111 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
     );
   }
 
+  function renderLessons(){
+    return(
+      <div>
+        {selLesson?(
+          <div style={S.card}>
+            <button style={{...S.btn("secondary"),fontSize:11,marginBottom:14}} onClick={function(){setSelLesson(null);}}>← Back to Lessons</button>
+            <div style={{background:"#230E6A",borderRadius:8,padding:"14px 18px",marginBottom:16,color:"#fff"}}>
+              <div style={{fontSize:15,fontWeight:800,color:"#F0C060"}}>{selLesson.topic}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",marginTop:4}}>{selLesson.subject} · {selLesson.class}{selLesson.arm||""} · {formatDate(selLesson.date)}</div>
+            </div>
+            {selLesson.subtopic&&<div style={{...S.card,background:"#EFF6FF",marginBottom:12}}><div style={{fontSize:11,fontWeight:700,color:"#1D4ED8",marginBottom:4}}>📌 SUBTOPIC</div><div style={{fontSize:13}}>{selLesson.subtopic}</div></div>}
+            {selLesson.behaviouralObjectives&&<div style={{...S.card,background:"#F0FDF4",marginBottom:12}}><div style={{fontSize:11,fontWeight:700,color:"#059669",marginBottom:6}}>🎯 LEARNING OBJECTIVES</div><div style={{fontSize:13,lineHeight:1.8,whiteSpace:"pre-line"}}>{selLesson.behaviouralObjectives}</div></div>}
+            {selLesson.keyPoints&&<div style={{...S.card,background:"#FFF7ED",marginBottom:12}}><div style={{fontSize:11,fontWeight:700,color:"#D97706",marginBottom:6}}>🔑 KEY POINTS / KEYWORDS</div><div style={{fontSize:13,lineHeight:1.8,whiteSpace:"pre-line"}}>{selLesson.keyPoints}</div></div>}
+            {selLesson.previousKnowledge&&<div style={{...S.card,marginBottom:12}}><div style={{fontSize:11,fontWeight:700,color:"#6B7280",marginBottom:4}}>📚 PRIOR KNOWLEDGE NEEDED</div><div style={{fontSize:13}}>{selLesson.previousKnowledge}</div></div>}
+            {(selLesson.videoLinks||[]).length>0&&(
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#230E6A",marginBottom:10}}>🎬 VIDEO RESOURCES</div>
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                  {selLesson.videoLinks.map(function(v,i){
+                    var embed = v.url&&v.url.includes("youtube")?v.url.replace("watch?v=","embed/").replace("youtu.be/","www.youtube.com/embed/"):null;
+                    return(
+                      <div key={i} style={{borderRadius:8,overflow:"hidden",border:"2px solid #E5E7EB"}}>
+                        <div style={{background:"#230E6A",padding:"8px 12px",color:"#F0C060",fontWeight:600,fontSize:12}}>▶ {v.title}</div>
+                        {embed?(<iframe width="100%" height="240" src={embed} title={v.title} frameBorder="0" allowFullScreen style={{display:"block"}}/>):(<a href={v.url} target="_blank" rel="noopener noreferrer" style={{display:"block",padding:"12px",background:"#FEE2E2",color:"#DC2626",fontWeight:600,fontSize:12}}>🔗 Open Video Link: {v.url}</a>)}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {selLesson.assignment&&<div style={{background:"#FFFBEB",border:"1px solid #F59E0B",borderRadius:8,padding:"12px 16px",marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:"#D97706",marginBottom:4}}>📝 ASSIGNMENT</div><div style={{fontSize:13,lineHeight:1.6}}>{selLesson.assignment}</div><div style={{fontSize:11,color:"#6B7280",marginTop:6}}>See the Assignments tab for submission status.</div></div>}
+          </div>
+        ):(
+          <div>
+            <div style={{background:"linear-gradient(120deg,#230E6A,#3D2496)",borderRadius:12,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
+              <div style={{fontSize:16,fontWeight:800}}>📖 Lesson Notes</div>
+              <div style={{fontSize:11,opacity:0.8,marginTop:2}}>Published lessons for {student.class}{student.arm}</div>
+            </div>
+            {classLessons.length===0&&<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No published lessons for {student.class} yet.</div>}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+              {classLessons.map(function(l){
+                var hasVideo = (l.videoLinks||[]).length>0;
+                return(
+                  <div key={l.id} onClick={function(){setSelLesson(l);}} style={{...S.card,cursor:"pointer",borderLeft:"4px solid #230E6A",margin:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#230E6A",marginBottom:4}}>{l.topic}</div>
+                    <div style={{fontSize:11,color:C.textMuted,marginBottom:6}}>{l.subject} · {formatDate(l.date)}</div>
+                    {l.subtopic&&<div style={{fontSize:11,color:C.textMuted,fontStyle:"italic",marginBottom:6}}>{l.subtopic}</div>}
+                    <div style={S.row}>
+                      {hasVideo&&<span style={S.badge("red")}>▶ {l.videoLinks.length} Video{l.videoLinks.length>1?"s":""}</span>}
+                      {l.assignment&&<span style={S.badge("yellow")}>📝 Has Assignment</span>}
+                      <span style={{...S.badge("green"),marginLeft:"auto"}}>Open →</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderAssignments(){
+    return(
+      <div>
+        <div style={{background:"linear-gradient(120deg,#230E6A,#3D2496)",borderRadius:12,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
+          <div style={{fontSize:16,fontWeight:800}}>📝 Assignments</div>
+          <div style={{fontSize:11,opacity:0.8,marginTop:2}}>Assignments for {student.class}{student.arm}</div>
+        </div>
+        {classAssignments.length===0&&<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No assignments for {student.class}.</div>}
+        {classAssignments.map(function(asn){
+          var sub = childSubmission(asn.id);
+          var lesson = (lessons||[]).find(function(l){ return l.id===asn.lessonId; });
+          var open = lesson ? lesson.submissionOpen!==false : asn.status!=="Closed";
+          return(
+            <div key={asn.id} style={S.card}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                <div style={{flex:1}}>
+                  <div style={S.row}>
+                    <div style={{fontSize:14,fontWeight:700,color:"#230E6A"}}>{asn.title}</div>
+                    <span style={S.badge(open?"green":"red")}>{open?"🟢 Open":"🔒 Closed"}</span>
+                  </div>
+                  <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{asn.subject} · Due: {asn.dueDate?formatDate(asn.dueDate):"Open"} · Max: {asn.maxScore} marks</div>
+                  <div style={{fontSize:12,color:C.text,marginTop:8,lineHeight:1.6}}>{asn.description}</div>
+                </div>
+              </div>
+              {sub?(
+                <div style={{marginTop:12,background:sub.marked?"#F0FDF4":"#FFFBEB",border:"1px solid "+(sub.marked?"#059669":"#F0C060"),borderRadius:8,padding:12}}>
+                  <div style={{fontSize:11,fontWeight:700,color:sub.marked?"#059669":"#D97706",marginBottom:6}}>{sub.marked?"✓ Marked":"⏳ Submitted — Awaiting Marking"}</div>
+                  <div style={{fontSize:12,color:C.text,lineHeight:1.6,marginBottom:sub.marked?8:0}}>{sub.content}</div>
+                  {sub.marked&&<>
+                    <div style={{fontWeight:700,fontSize:14,color:"#059669"}}>Score: {sub.score}/{asn.maxScore}</div>
+                    {sub.feedback&&<div style={{fontSize:12,color:"#230E6A",marginTop:6,fontStyle:"italic"}}>Teacher's comment: "{sub.feedback}"</div>}
+                  </>}
+                </div>
+              ):(
+                <div style={{marginTop:12,fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Not yet submitted by your child.</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderLibrary(){
     return(
       <div>
@@ -7121,6 +7235,8 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
         {tab==="results" ? renderResults() : null}
         {tab==="attendance" ? renderAttendance() : null}
         {tab==="fees" ? renderFees() : null}
+        {tab==="lessons" ? renderLessons() : null}
+        {tab==="assignments" ? renderAssignments() : null}
         {tab==="notices" ? renderNotices() : null}
         {tab==="library" ? renderLibrary() : null}
       </div>
@@ -9947,7 +10063,7 @@ export default function App(){
   const [page,setPage]=useState("dashboard");
   const [dbStatus,setDbStatus]=useState("loading");
   const [parentStudent,setParentStudent]=useState(null); // set when parent logs in
-  const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[]});
+  const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[]});
   const isMobile = useIsMobile();
   const [sidebarOpen,setSidebarOpen]=useState(false);
 
@@ -10121,7 +10237,7 @@ export default function App(){
 
   // Show parent portal if parent logged in
   if(parentStudent){
-    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} onLogout={()=>{setParentStudent(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[]});}}/>;
+    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} lessons={parentData.lessons} assignments={parentData.assignments} submissions={parentData.submissions} onLogout={()=>{setParentStudent(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[]});}}/>;
   }
 
   // Parent credentials (Admission No. + registered phone) are verified
@@ -10151,7 +10267,10 @@ export default function App(){
         attendance: dataRes.attendance||[],
         fees: dataRes.fees||[],
         diary: dataRes.diary||[],
-        elibrary: dataRes.elibrary||[]
+        elibrary: dataRes.elibrary||[],
+        lessons: dataRes.lessons||[],
+        assignments: dataRes.assignments||[],
+        submissions: dataRes.submissions||[]
       });
       setParentStudent(loginRes.student);
       return true;

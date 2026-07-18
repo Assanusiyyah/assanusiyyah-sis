@@ -1,6 +1,7 @@
 // ── Parent-scoped data — Netlify Function ──
 // Given a valid "parent" token (issued by parent-login.js), returns only
-// that one child's results/attendance/fees, plus the shared diary and
+// that one child's results/attendance/fees/submissions, published lesson
+// notes and assignments for their class, plus the shared diary and
 // elibrary tables. Never touches /api/db's ALLOWED_TABLES path, so a
 // parent token can't be used to pull any other student's records.
 const { requireAuth } = require("./utils/auth");
@@ -37,6 +38,7 @@ exports.handler = async function(event, context) {
     return { statusCode: auth.statusCode, headers, body: JSON.stringify({ error: auth.error }) };
   }
   const studentId = auth.payload.studentId;
+  const studentClass = auth.payload.studentClass;
   if (!studentId) return { statusCode: 400, headers, body: JSON.stringify({ error: "Token missing studentId" }) };
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -50,19 +52,25 @@ exports.handler = async function(event, context) {
   };
 
   try {
-    const [allResults, allAttendance, allFees, diary, elibrary] = await Promise.all([
+    const [allResults, allAttendance, allFees, diary, elibrary, allLessons, allAssignments, allSubmissions] = await Promise.all([
       fetchTable(sbHeaders, "results"),
       fetchTable(sbHeaders, "attendance"),
       fetchTable(sbHeaders, "fees"),
       fetchTable(sbHeaders, "diary"),
-      fetchTable(sbHeaders, "elibrary")
+      fetchTable(sbHeaders, "elibrary"),
+      fetchTable(sbHeaders, "lessons"),
+      fetchTable(sbHeaders, "assignments"),
+      fetchTable(sbHeaders, "submissions")
     ]);
 
     const results = allResults.filter(function(r) { return r.studentId === studentId; });
     const attendance = allAttendance.filter(function(a) { return a.studentId === studentId; });
     const fees = allFees.filter(function(f) { return f.studentId === studentId; });
+    const lessons = allLessons.filter(function(l) { return l.class === studentClass && l.status === "Published"; });
+    const assignments = allAssignments.filter(function(a) { return a.class === studentClass; });
+    const submissions = allSubmissions.filter(function(s) { return s.studentId === studentId; });
 
-    return { statusCode: 200, headers, body: JSON.stringify({ results, attendance, fees, diary, elibrary }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ results, attendance, fees, diary, elibrary, lessons, assignments, submissions }) };
 
   } catch (err) {
     console.error("[ParentData] Exception:", err.message);
