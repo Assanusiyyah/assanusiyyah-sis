@@ -77,7 +77,7 @@ exports.handler = async function(event, context) {
       return { statusCode: 200, headers, body: JSON.stringify({ success: false, error: "This student's record is inactive. Please contact the school." }) };
     }
 
-    const token = signToken({ role: "parent", studentId: student.id, studentClass: student.class }, 12 * 3600);
+    const token = signToken({ role: "parent", studentId: student.id, studentClass: student.class, studentArm: student.arm }, 12 * 3600);
 
     console.log("[ParentLogin] SUCCESS for:", admissionNo);
     return { statusCode: 200, headers, body: JSON.stringify({ success: true, token: token, student: student }) };

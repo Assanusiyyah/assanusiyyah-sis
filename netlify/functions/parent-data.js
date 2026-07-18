@@ -39,6 +39,7 @@ exports.handler = async function(event, context) {
   }
   const studentId = auth.payload.studentId;
   const studentClass = auth.payload.studentClass;
+  const studentArm = auth.payload.studentArm;
   if (!studentId) return { statusCode: 400, headers, body: JSON.stringify({ error: "Token missing studentId" }) };
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -52,7 +53,7 @@ exports.handler = async function(event, context) {
   };
 
   try {
-    const [allResults, allAttendance, allFees, diary, elibrary, allLessons, allAssignments, allSubmissions] = await Promise.all([
+    const [allResults, allAttendance, allFees, diary, elibrary, allLessons, allAssignments, allSubmissions, allExams] = await Promise.all([
       fetchTable(sbHeaders, "results"),
       fetchTable(sbHeaders, "attendance"),
       fetchTable(sbHeaders, "fees"),
@@ -60,7 +61,8 @@ exports.handler = async function(event, context) {
       fetchTable(sbHeaders, "elibrary"),
       fetchTable(sbHeaders, "lessons"),
       fetchTable(sbHeaders, "assignments"),
-      fetchTable(sbHeaders, "submissions")
+      fetchTable(sbHeaders, "submissions"),
+      fetchTable(sbHeaders, "exams")
     ]);
 
     const results = allResults.filter(function(r) { return r.studentId === studentId; });
@@ -70,7 +72,16 @@ exports.handler = async function(event, context) {
     const assignments = allAssignments.filter(function(a) { return a.class === studentClass; });
     const submissions = allSubmissions.filter(function(s) { return s.studentId === studentId; });
 
-    return { statusCode: 200, headers, body: JSON.stringify({ results, attendance, fees, diary, elibrary, lessons, assignments, submissions }) };
+    // CBT exams: sanitized listing only — never send questions/answer keys here.
+    // The real question set is fetched (and stripped of answers) server-side
+    // by exam-attempt.js when the student actually starts the exam.
+    const exams = allExams
+      .filter(function(e) { return e.cbtActive && e.class === studentClass && (e.arm || "A") === (studentArm || "A"); })
+      .map(function(e) {
+        return { id: e.id, title: e.title, subject: e.subject, class: e.class, arm: e.arm, duration: e.duration, date: e.date, session: e.session, term: e.term };
+      });
+
+    return { statusCode: 200, headers, body: JSON.stringify({ results, attendance, fees, diary, elibrary, lessons, assignments, submissions, exams }) };
 
   } catch (err) {
     console.error("[ParentData] Exception:", err.message);

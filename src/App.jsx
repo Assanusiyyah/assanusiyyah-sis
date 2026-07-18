@@ -1308,7 +1308,7 @@ function AnalyticsModule({students, attendance, results}){
 // Isolated from StudentsModule's table so typing in this form never
 // re-renders the (potentially large, photo-heavy) student table below it.
 function StudentFormModal({open,student,onSave,onClose}){
-  const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",class:"JSS1",arm:"A",entryClass:"JSS1",entrySession:CURRENT_SESSION,parentName:"",parentPhone:"",parentEmail:"",address:"",religion:"Islam",bloodGroup:"O+",genotype:"AA",boardingType:"Day",phone:"",passport:"",active:true};
+  const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",class:"JSS1",arm:"A",entryClass:"JSS1",entrySession:CURRENT_SESSION,parentName:"",parentPhone:"",parentEmail:"",address:"",religion:"Islam",bloodGroup:"O+",genotype:"AA",boardingType:"Day",phone:"",passport:"",active:true,examExtraMinutes:0};
   const [form,setForm]=useState(student?{...student}:ef);
   const passRef=useRef();
 
@@ -1348,6 +1348,11 @@ function StudentFormModal({open,student,onSave,onClose}){
       <div style={S.grid3}><FormField form={form} setForm={setForm} label="Entry Class" field="entryClass" opts={CLASSES}/><FormField form={form} setForm={setForm} label="Entry Session" field="entrySession" opts={SESSIONS}/><FormField form={form} setForm={setForm} label="Student Phone" field="phone"/></div>
       <div style={S.grid2}><FormField form={form} setForm={setForm} label="Parent/Guardian Name" field="parentName"/><FormField form={form} setForm={setForm} label="Parent Phone" field="parentPhone"/></div>
       <div style={S.grid2}><FormField form={form} setForm={setForm} label="Parent Email" field="parentEmail"/><div style={S.formGroup}><label style={S.label}>Home Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div></div>
+      <div style={{...S.formGroup,background:"#EFF6FF",borderRadius:8,padding:"6px 8px",border:"1px solid #93C5FD",maxWidth:260}}>
+        <label style={{...S.label,color:"#1D4ED8"}}>⏱ CBT Exam Extra Time (minutes)</label>
+        <input type="number" min="0" style={S.input} value={form.examExtraMinutes||0} onChange={function(e){setForm(function(p){return{...p,examExtraMinutes:parseInt(e.target.value)||0};});}}/>
+        <div style={{fontSize:9,color:"#1D4ED8",marginTop:2}}>Standing extra time added to every CBT exam this student takes (accommodation/SEN).</div>
+      </div>
       <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={onClose}>Cancel</button><button style={S.btn()} onClick={handleSave}>{student?"Save Changes":"Enrol Student"}</button></div>
     </Modal>
   );
@@ -6686,11 +6691,15 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
 }
 
 
-function ParentPortal({student, students, results, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, onLogout}){
+function ParentPortal({student, students, results, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, exams, parentToken, onLogout}){
   var _tab = useState("home"); var tab = _tab[0]; var setTab = _tab[1];
   var _selSess = useState(CURRENT_SESSION); var selSess = _selSess[0]; var setSelSess = _selSess[1];
   var _selTerm = useState(CURRENT_TERM); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
   var _selLesson = useState(null); var selLesson = _selLesson[0]; var setSelLesson = _selLesson[1];
+  var _activeAttempt = useState(null); var activeAttempt = _activeAttempt[0]; var setActiveAttempt = _activeAttempt[1];
+  var _examResult = useState(null); var examResult = _examResult[0]; var setExamResult = _examResult[1];
+  var _loadingExam = useState(false); var loadingExam = _loadingExam[0]; var setLoadingExam = _loadingExam[1];
+  var _remainingSec = useState(null); var remainingSec = _remainingSec[0]; var setRemainingSec = _remainingSec[1];
 
   var logo = settings.schoolLogo || "";
 
@@ -6730,6 +6739,7 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
     ["home","🏠 Home"],["results","📝 Results"],
     ["attendance","📋 Attendance"],["fees","💰 Fees"],
     ["lessons","📖 Lesson Notes"],["assignments","📝 Assignments"],
+    ["cbt","🖥 CBT Exams"],
     ["notices","📢 Notices"],["library","📚 Library"],
   ];
 
@@ -6739,6 +6749,87 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
   function childSubmission(assignmentId){
     return (submissions||[]).find(function(s){ return s.assignmentId===assignmentId && s.studentId===student.id; });
   }
+
+  // ── CBT exams (online, anti-cheat monitored) ──────────
+  function callExamApi(action, extra){
+    return fetch("/api/exam", {
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+parentToken},
+      body:JSON.stringify(Object.assign({action:action}, extra||{}))
+    }).then(function(r){ return r.json(); });
+  }
+
+  function startExam(examId){
+    setLoadingExam(true);
+    callExamApi("start",{examId:examId}).then(function(res){
+      setLoadingExam(false);
+      if(res.error) return alert(res.error);
+      setActiveAttempt({
+        attemptId:res.attemptId, questions:res.questions, answers:res.answers||{},
+        startedAt:res.startedAt, effectiveDurationMinutes:res.effectiveDurationMinutes,
+        examTitle:res.examTitle, examSubject:res.examSubject
+      });
+    }).catch(function(e){ setLoadingExam(false); alert("Could not start exam: "+e.message); });
+  }
+
+  function selectAnswer(questionId, value){
+    var attemptId = activeAttempt.attemptId;
+    setActiveAttempt(function(p){ return Object.assign({}, p, {answers:Object.assign({}, p.answers, {[questionId]:value})}); });
+    callExamApi("answer",{attemptId:attemptId, questionId:questionId, value:value}).catch(function(){});
+  }
+
+  function submitExam(){
+    if(!activeAttempt) return;
+    var title = activeAttempt.examTitle, subject = activeAttempt.examSubject;
+    var attemptId = activeAttempt.attemptId;
+    setActiveAttempt(null);
+    callExamApi("submit",{attemptId:attemptId}).then(function(res){
+      if(res.error) return alert(res.error);
+      setExamResult(Object.assign({}, res, {examTitle:title, examSubject:subject}));
+    }).catch(function(e){ alert("Could not submit exam: "+e.message); });
+  }
+
+  // Anti-cheat monitoring — active only while a CBT attempt is in progress.
+  // A determined student with a second device can still cheat; this is a
+  // deterrent that logs flags for teacher review, not an absolute block.
+  useEffect(function(){
+    if(!activeAttempt) return;
+    function blockCopyPaste(e){
+      e.preventDefault();
+      callExamApi("flag",{attemptId:activeAttempt.attemptId, field:"pasteAttemptCount"}).catch(function(){});
+    }
+    function blockContextMenu(e){ e.preventDefault(); }
+    function handleVisibility(){
+      if(document.hidden) callExamApi("flag",{attemptId:activeAttempt.attemptId, field:"tabSwitchCount"}).catch(function(){});
+    }
+    document.addEventListener("copy", blockCopyPaste);
+    document.addEventListener("paste", blockCopyPaste);
+    document.addEventListener("cut", blockCopyPaste);
+    document.addEventListener("contextmenu", blockContextMenu);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return function(){
+      document.removeEventListener("copy", blockCopyPaste);
+      document.removeEventListener("paste", blockCopyPaste);
+      document.removeEventListener("cut", blockCopyPaste);
+      document.removeEventListener("contextmenu", blockContextMenu);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  },[activeAttempt&&activeAttempt.attemptId]);
+
+  // Countdown timer — auto-submits when time runs out.
+  useEffect(function(){
+    if(!activeAttempt){ setRemainingSec(null); return; }
+    function tick(){
+      var elapsed = (Date.now()-new Date(activeAttempt.startedAt).getTime())/1000;
+      var total = activeAttempt.effectiveDurationMinutes*60;
+      var rem = Math.max(0, Math.round(total-elapsed));
+      setRemainingSec(rem);
+      if(rem<=0) submitExam();
+    }
+    tick();
+    var iv = setInterval(tick, 1000);
+    return function(){ clearInterval(iv); };
+  },[activeAttempt&&activeAttempt.attemptId]);
 
   var CAT_COLOR = {A1:"green",B2:"green",B3:"green",C4:"yellow",C5:"yellow",C6:"yellow",D7:"red",E8:"red",F9:"red"};
 
@@ -7165,6 +7256,96 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
     );
   }
 
+  function renderCbtList(){
+    var available = exams||[];
+    return(
+      <div>
+        <div style={{background:"linear-gradient(120deg,#230E6A,#3D2496)",borderRadius:12,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
+          <div style={{fontSize:16,fontWeight:800}}>🖥 CBT Exams</div>
+          <div style={{fontSize:11,opacity:0.8,marginTop:2}}>Online exams available for {student.class}{student.arm}</div>
+        </div>
+        <div style={{...S.card,background:"#FFFBEB",border:"1px solid #F59E0B",marginBottom:14,fontSize:11,color:"#92400E"}}>
+          ⚠ Once started, the timer cannot be paused. Find a quiet spot with a stable connection before you begin. Tab switches, copy/paste and right-click are logged during the exam.
+        </div>
+        {available.length===0&&<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No CBT exams available right now.</div>}
+        {available.map(function(e){
+          return(
+            <div key={e.id} style={S.card}>
+              <div style={{fontSize:14,fontWeight:700,color:"#230E6A"}}>{e.title}</div>
+              <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{e.subject} · ⏱ {e.duration} minutes{(student.examExtraMinutes>0)?" (+"+student.examExtraMinutes+" min accommodation)":""}</div>
+              <button style={{...S.btn(),marginTop:10,fontSize:12}} disabled={loadingExam} onClick={function(){startExam(e.id);}}>{loadingExam?"Loading...":"▶ Start / Resume Exam"}</button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderCbtTaking(){
+    var a = activeAttempt;
+    var mins = Math.floor((remainingSec||0)/60);
+    var secs = (remainingSec||0)%60;
+    var answeredCount = Object.keys(a.answers||{}).length;
+    var low = (remainingSec!==null&&remainingSec<=60);
+    return(
+      <div>
+        <div style={{background:low?"#DC2626":"#230E6A",borderRadius:12,padding:"14px 20px",marginBottom:14,color:"#fff",position:"sticky",top:66,zIndex:50,boxShadow:"0 2px 10px rgba(0,0,0,0.2)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#F0C060"}}>{a.examTitle} · {a.examSubject}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
+            <div style={{fontSize:24,fontWeight:900}}>⏱ {String(mins).padStart(2,"0")}:{String(secs).padStart(2,"0")}</div>
+            <div style={{fontSize:12}}>{answeredCount} / {a.questions.length} answered</div>
+          </div>
+        </div>
+        {a.questions.map(function(q,i){
+          return(
+            <div key={q.id} style={S.card}>
+              <div style={{fontWeight:700,marginBottom:8,display:"flex",justifyContent:"space-between",gap:8}}>
+                <span>{i+1}. {q.text}</span>
+                <span style={{fontSize:11,color:C.textMuted,whiteSpace:"nowrap"}}>[{q.marks} marks]</span>
+              </div>
+              {q.image?<img src={q.image} alt="" style={{maxWidth:"100%",marginBottom:8,borderRadius:6}}/>:null}
+              {["A","B","C","D"].map(function(letter){
+                var opt = q["option"+letter];
+                if(!opt) return null;
+                var selected = a.answers[q.id]===letter;
+                return(
+                  <label key={letter} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:6,marginBottom:6,background:selected?"#EFF6FF":"#F9FAFB",border:"1px solid "+(selected?"#230E6A":"#E5E7EB"),cursor:"pointer"}}>
+                    <input type="radio" name={"q_"+q.id} checked={selected} onChange={function(){selectAnswer(q.id, letter);}}/>
+                    <span style={{fontWeight:700}}>{letter}.</span>
+                    <span>{opt}</span>
+                  </label>
+                );
+              })}
+            </div>
+          );
+        })}
+        <button style={{...S.btn("green"),width:"100%",fontSize:14,padding:14}} onClick={function(){ if(window.confirm("Submit your answers now? You cannot change them after submitting.")) submitExam(); }}>✅ Submit Exam</button>
+      </div>
+    );
+  }
+
+  function renderCbtResult(){
+    var r = examResult;
+    return(
+      <div style={{...S.card,textAlign:"center",padding:32}}>
+        <div style={{fontSize:40,marginBottom:10}}>{r.autoPushed?"✅":"📝"}</div>
+        <div style={{fontSize:16,fontWeight:800,marginBottom:6,color:"#230E6A"}}>{r.examTitle} Submitted!</div>
+        <div style={{fontSize:28,fontWeight:900,color:"#059669",marginBottom:4}}>{r.correctCount}/{r.totalCount} correct</div>
+        <div style={{fontSize:13,color:C.textMuted,marginBottom:14}}>Score: {r.score} / {r.maxScore}</div>
+        <div style={{fontSize:12,color:C.textMuted,maxWidth:400,margin:"0 auto"}}>
+          {r.autoPushed ? "Your score has been recorded." : "Objective answers recorded — your teacher will complete manual marking of any theory questions before your final score is confirmed."}
+        </div>
+        <button style={{...S.btn(),marginTop:16}} onClick={function(){setExamResult(null);}}>Back to Exams</button>
+      </div>
+    );
+  }
+
+  function renderCbt(){
+    if(activeAttempt) return renderCbtTaking();
+    if(examResult) return renderCbtResult();
+    return renderCbtList();
+  }
+
   function renderLibrary(){
     return(
       <div>
@@ -7213,12 +7394,12 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:11,color:"rgba(255,255,255,0.8)"}}>👋 {student.parentName||"Parent"}</span>
-          <button onClick={onLogout} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:6,color:"#fff",padding:"4px 12px",cursor:"pointer",fontSize:11}}>Logout</button>
+          {!activeAttempt&&<button onClick={onLogout} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:6,color:"#fff",padding:"4px 12px",cursor:"pointer",fontSize:11}}>Logout</button>}
         </div>
       </div>
 
-      {/* Tab navigation */}
-      <div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"0 20px",display:"flex",gap:0,overflowX:"auto"}}>
+      {/* Tab navigation — hidden during an active CBT attempt so the timer can't be dodged by navigating away */}
+      {!activeAttempt&&<div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"0 20px",display:"flex",gap:0,overflowX:"auto"}}>
         {NAV_TABS.map(function(pair){
           var id=pair[0]; var label=pair[1];
           return(
@@ -7227,7 +7408,7 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {/* Content */}
       <div style={{maxWidth:900,margin:"0 auto",padding:"20px 16px"}}>
@@ -7237,6 +7418,7 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
         {tab==="fees" ? renderFees() : null}
         {tab==="lessons" ? renderLessons() : null}
         {tab==="assignments" ? renderAssignments() : null}
+        {tab==="cbt" ? renderCbt() : null}
         {tab==="notices" ? renderNotices() : null}
         {tab==="library" ? renderLibrary() : null}
       </div>
@@ -8995,6 +9177,9 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
   var _showCreate = useState(false); var showCreate = _showCreate[0]; var setShowCreate = _showCreate[1];
   var _marking = useState(null); var marking = _marking[0]; var setMarking = _marking[1];
   var _search = useState(""); var search = _search[0]; var setSearch = _search[1];
+  var _reportExam = useState(null); var reportExam = _reportExam[0]; var setReportExam = _reportExam[1];
+  var _reportRows = useState([]); var reportRows = _reportRows[0]; var setReportRows = _reportRows[1];
+  var _reportLoading = useState(false); var reportLoading = _reportLoading[0]; var setReportLoading = _reportLoading[1];
 
   var isAdmin = currentUser.role==="root"||currentUser.role==="admin"||currentUser.role==="Admin";
 
@@ -9111,6 +9296,71 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
     alert("✅ Scores pushed to Results for "+pushed+" student(s) under "+COLUMN_LABELS[exam.column]+".");
     // Mark exam as marked
     setExams(function(p){return p.map(function(e){return e.id===exam.id?{...e,status:"Marked"}:e;});});
+  }
+
+  // ── CBT anti-cheat report — suspicion-scored attempt list ──
+  function loadCbtReport(exam){
+    setReportExam(exam);
+    setReportRows([]);
+    setReportLoading(true);
+    fetch("/api/exam", {
+      method:"POST",
+      headers:authFetchHeaders(),
+      body:JSON.stringify({action:"report", examId:exam.id})
+    }).then(function(r){return r.json();}).then(function(res){
+      setReportLoading(false);
+      if(res.error) return alert(res.error);
+      setReportRows(res.attempts||[]);
+    }).catch(function(e){ setReportLoading(false); alert("Could not load report: "+e.message); });
+  }
+
+  var FLAG_COLOR = {high:"red",medium:"yellow",low:"blue",none:"green"};
+
+  function renderCbtReportView(){
+    return(
+      <div>
+        <button style={{...S.btn("secondary"),fontSize:11,marginBottom:14}} onClick={function(){setTab("exams");setReportExam(null);}}>← Back to Exams</button>
+        {reportExam&&<div style={{...S.card,marginBottom:14,background:"#F5F3FB"}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.primaryDark}}>📊 CBT Anti-Cheat Report — {reportExam.title}</div>
+          <div style={{fontSize:11,color:C.textMuted,marginTop:4}}>{reportExam.subject} · {reportExam.class}{reportExam.arm} · Paste attempts weighted ×3, tab switches ×1. High ≥15, Medium ≥6, Low ≥1.</div>
+        </div>}
+        {reportLoading?(
+          <div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>Loading report...</div>
+        ):reportRows.length===0?(
+          <div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No CBT attempts recorded for this exam yet.</div>
+        ):(
+          <div>
+            <TableActionBar
+              title={"CBT Report - "+(reportExam?reportExam.title:"")}
+              columns={["Student","Adm No.","Status","Duration (min)","Tab Switches","Paste Attempts","Score","Suspicion","Flag"]}
+              rows={reportRows.map(function(r){return [r.studentName,r.admissionNumber,r.status,r.durationMinutes==null?"—":r.durationMinutes,r.tabSwitches,r.pasteAttempts,(r.score==null?"—":r.score+"/"+r.maxScore),r.suspicionScore,r.flagLevel];})}
+              filename={"CBT_Report_"+(reportExam?reportExam.title:"exam")}
+            />
+            <table style={S.table}><thead><tr>
+              {["Student","Adm No.","Status","Duration","Tab Switches","Paste Attempts","Score","Suspicion","Flag"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}
+            </tr></thead>
+            <tbody>
+              {reportRows.map(function(r){
+                return(
+                  <tr key={r.attemptId}>
+                    <td style={S.td}>{r.studentName}</td>
+                    <td style={S.td}>{r.admissionNumber}</td>
+                    <td style={S.td}><span style={S.badge(r.status==="submitted"?"green":r.status==="in progress"?"yellow":"red")}>{r.status}</span></td>
+                    <td style={S.td}>{r.durationMinutes==null?"—":r.durationMinutes+" min"}</td>
+                    <td style={S.td}>{r.tabSwitches}</td>
+                    <td style={S.td}>{r.pasteAttempts}</td>
+                    <td style={S.td}>{r.score==null?"—":r.score+"/"+r.maxScore}</td>
+                    <td style={S.td}>{r.suspicionScore}</td>
+                    <td style={S.td}><span style={S.badge(FLAG_COLOR[r.flagLevel])}>{r.flagLevel}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
   }
 
   // ── Print exam paper ──────────────────────────────
@@ -9350,7 +9600,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
       </div>
 
       {/* Marking view */}
-      {marking ? renderMarkingView() : (
+      {marking ? renderMarkingView() : tab==="cbtreport" ? renderCbtReportView() : (
         <div>
           {/* Search */}
           <div style={{...S.card,marginBottom:14}}>
@@ -9394,6 +9644,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
                       <button onClick={function(){printExamPaper(exam);}} style={{...S.btn("secondary"),fontSize:10,padding:"4px 10px"}}>🖨 Paper</button>
                       <button onClick={function(){printMarkingGuide(exam);}} style={{...S.btn("secondary"),fontSize:10,padding:"4px 10px"}}>🗝 Guide</button>
                       <button onClick={function(){setMarking(exam);setTab("marking");}} style={{...S.btn("blue"),fontSize:10,padding:"4px 10px"}}>✏️ Mark</button>
+                      {exam.cbtActive&&<button onClick={function(){loadCbtReport(exam);setTab("cbtreport");}} style={{...S.btn("gold"),fontSize:10,padding:"4px 10px"}}>📊 CBT Report</button>}
                       {isAdmin&&(
                         <button onClick={function(){
                           setExams(function(p){return p.map(function(e){
@@ -10063,7 +10314,8 @@ export default function App(){
   const [page,setPage]=useState("dashboard");
   const [dbStatus,setDbStatus]=useState("loading");
   const [parentStudent,setParentStudent]=useState(null); // set when parent logs in
-  const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[]});
+  const [parentToken,setParentToken]=useState(null); // scoped JWT, needed for CBT exam actions
+  const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[]});
   const isMobile = useIsMobile();
   const [sidebarOpen,setSidebarOpen]=useState(false);
 
@@ -10237,7 +10489,7 @@ export default function App(){
 
   // Show parent portal if parent logged in
   if(parentStudent){
-    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} lessons={parentData.lessons} assignments={parentData.assignments} submissions={parentData.submissions} onLogout={()=>{setParentStudent(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[]});}}/>;
+    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} lessons={parentData.lessons} assignments={parentData.assignments} submissions={parentData.submissions} exams={parentData.exams} parentToken={parentToken} onLogout={()=>{setParentStudent(null);setParentToken(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[]});}}/>;
   }
 
   // Parent credentials (Admission No. + registered phone) are verified
@@ -10270,8 +10522,10 @@ export default function App(){
         elibrary: dataRes.elibrary||[],
         lessons: dataRes.lessons||[],
         assignments: dataRes.assignments||[],
-        submissions: dataRes.submissions||[]
+        submissions: dataRes.submissions||[],
+        exams: dataRes.exams||[]
       });
+      setParentToken(loginRes.token);
       setParentStudent(loginRes.student);
       return true;
     } catch(e){
