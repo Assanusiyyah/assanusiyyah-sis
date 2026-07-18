@@ -6421,21 +6421,35 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
   var _search = useState(""); var search = _search[0]; var setSearch = _search[1];
   var _filterDate = useState(""); var filterDate = _filterDate[0]; var setFilterDate = _filterDate[1];
   var _viewing = useState(null); var viewing = _viewing[0]; var setViewing = _viewing[1];
+  var _showPedDosing = useState(false); var showPedDosing = _showPedDosing[0]; var setShowPedDosing = _showPedDosing[1];
+  var _historySel = useState(""); var historySel = _historySel[0]; var setHistorySel = _historySel[1]; // "student:ID" or "staff:ID"
+  var _drugPeriod = useState("term"); var drugPeriod = _drugPeriod[0]; var setDrugPeriod = _drugPeriod[1];
+  var _drugRefDate = useState(today()); var drugRefDate = _drugRefDate[0]; var setDrugRefDate = _drugRefDate[1];
 
-  // ── Patient selection: Class → Student ───────────────
+  // ── Patient selection: Student (Class → Student) or Staff ───────
+  var _patientType = useState("Student"); var patientType = _patientType[0]; var setPatientType = _patientType[1];
   var _selClass = useState("JSS1"); var selClass = _selClass[0]; var setSelClass = _selClass[1];
   var _selStudentId = useState(""); var selStudentId = _selStudentId[0]; var setSelStudentId = _selStudentId[1];
+  var _selStaffId = useState(""); var selStaffId = _selStaffId[0]; var setSelStaffId = _selStaffId[1];
   var _visitTime = useState(new Date().toLocaleTimeString("en-NG",{hour:"2-digit",minute:"2-digit"}));
   var visitTime = _visitTime[0]; var setVisitTime = _visitTime[1];
 
   var classStudents = students.filter(function(s){return s.active&&s.class===selClass;}).sort(function(a,b){return (a.surname+a.firstname).localeCompare(b.surname+b.firstname);});
+  var activeStaff = staff.filter(function(s){return s.active!==false;}).sort(function(a,b){return (a.surname+a.firstname).localeCompare(b.surname+b.firstname);});
   var foundStudent = selStudentId ? students.find(function(s){return s.id===selStudentId;}) : null;
+  var foundStaffPatient = selStaffId ? staff.find(function(s){return s.id===selStaffId;}) : null;
+  var foundPatient = patientType==="Staff" ? foundStaffPatient : foundStudent;
+
+  // A clinic record is a student visit unless explicitly marked Staff — keeps
+  // pre-existing records (all students, from before staff patients existed)
+  // working without a migration.
+  function recordPatientId(r){ return r.patientType==="Staff" ? r.staffId : r.studentId; }
 
   // ── Consultation form ────────────────────────────────
   var emptyForm = {
     presentingConditions:[], otherCondition:"",
     vitalSigns:{temperature:"",pulse:"",bp:"",weight:"",height:""},
-    diagnosis:"", treatmentPlan:"", treatmentPractice:"",
+    diagnosis:"", treatmentPlan:"", treatmentPractice:"", emergencyProtocol:"",
     medications:[], drugCombination:"",
     nurseName:currentUser.name||"", disposition:"Returned to class",
     followUp:"", notes:""
@@ -6548,6 +6562,76 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
     "Insomnia / Sleep difficulty": "1. Discuss sleep hygiene — consistent bedtime, reduced screen time\n2. Ask about stress, workload, or emotional concerns\n3. Encourage relaxation routine before bed\n4. Rule out caffeine/stimulant intake late in day\n5. Monitor impact on daytime functioning\n6. Refer to counsellor if related to anxiety/stress, or persists beyond 2 weeks",
   };
 
+  // ── Emergency / admission protocols (Nigerian PHC) ───
+  // One entry per SYMPTOMS item (except "Others"). Covers what TREATMENT_PRACTICES
+  // deliberately doesn't: stabilization, drug COMBINATIONS with doses, IV infusion
+  // where clinically indicated, and the admit/refer trigger — for the minority of
+  // cases where a presenting condition escalates into a genuine emergency. Loaded
+  // separately in STEP 5 so routine visits aren't cluttered with emergency-only content.
+  var EMERGENCY_PROTOCOLS = {
+    "Headache": "⚠ ESCALATE IF: sudden/thunderclap onset, worst-ever headache, neck stiffness, fever, vomiting, or altered consciousness.\n💊 Drug combination: Paracetamol 1g IV/oral + antiemetic (Metoclopramide 10mg) if vomiting.\n💉 Infusion: IV Normal Saline 0.9% at maintenance rate if unable to tolerate oral fluids.\n🚑 ADMIT/REFER: any red-flag feature above — suspect meningitis/raised ICP, refer immediately with airway monitored en route.",
+    "Migraine": "⚠ ESCALATE IF: unremitting attack >72 hours (status migrainosus) or new neurological deficit.\n💊 Drug combination: Ibuprofen 400mg + Metoclopramide 10mg (antiemetic + prokinetic combo improves absorption).\n💉 Infusion: IV Normal Saline if dehydrated from repeated vomiting.\n🚑 ADMIT/REFER: neurological deficit, confusion, or failure to respond to combination therapy.",
+    "Fever / Pyrexia": "⚠ ESCALATE IF: temp >39.5°C unresponsive to antipyretics, febrile convulsion, or altered consciousness.\n💊 Drug combination: Paracetamol + Artemether-Lumefantrine (if malaria suspected) + ORS.\n💉 Infusion: IV Normal Saline 0.9% bolus 10-20ml/kg if signs of dehydration/shock, then reassess.\n🚑 ADMIT/REFER: hyperpyrexia, seizure, or fever persisting >72 hours despite treatment.",
+    "Malaria symptoms": "⚠ ESCALATE IF: repeated vomiting (can't retain oral drugs), altered consciousness, seizures, or jaundice — suspect severe/cerebral malaria.\n💊 Drug combination: IV/IM Artesunate (severe malaria) + Paracetamol for fever; oral Coartem once tolerating orals.\n💉 Infusion: IV Normal Saline or 5% Dextrose-Saline for hydration and to support IV drug administration.\n🚑 ADMIT/REFER: URGENT hospital transfer for any severe-malaria feature — this is a medical emergency.",
+    "Typhoid symptoms": "⚠ ESCALATE IF: severe abdominal pain/rigidity (possible perforation), GI bleeding, or high sustained fever with confusion.\n💊 Drug combination: IV Ciprofloxacin or Ceftriaxone + Paracetamol for fever.\n💉 Infusion: IV Normal Saline to maintain hydration, especially if diarrhoea/vomiting present.\n🚑 ADMIT/REFER: URGENT if abdominal rigidity/bleeding suspected (surgical emergency) or toxic appearance.",
+    "Chickenpox / Measles-like rash": "⚠ ESCALATE IF: difficulty breathing, drowsiness/confusion, persistent vomiting, or widespread haemorrhagic rash.\n💊 Drug combination: Paracetamol (avoid Aspirin — Reye's syndrome risk) + antihistamine for itching; antibiotics only if secondary bacterial infection.\n💉 Infusion: IV Normal Saline if dehydrated from reduced oral intake.\n🚑 ADMIT/REFER: any breathing difficulty, neurological change, or signs of secondary bacterial infection — notify public health if outbreak suspected.",
+    "Vaccination site reaction": "⚠ ESCALATE IF: facial/throat swelling, breathing difficulty, or generalized hives within minutes-hours of vaccination — anaphylaxis.\n💊 Drug combination: IM Adrenaline (Epinephrine) 1:1000 immediately + IM/IV Chlorphenamine + IV Hydrocortisone as follow-up doses.\n💉 Infusion: IV Normal Saline bolus if hypotensive.\n🚑 ADMIT/REFER: URGENT — call for emergency transport immediately on suspicion of anaphylaxis, do not wait.",
+    "Stomach ache / Abdominal pain": "⚠ ESCALATE IF: pain localizes/worsens in lower right abdomen, rigid abdomen, or high fever with pain — suspect appendicitis/acute abdomen.\n💊 Drug combination: IV Paracetamol for analgesia (avoid strong analgesics that may mask surgical signs before review) + antispasmodic (Hyoscine) if colicky.\n💉 Infusion: IV Normal Saline, keep nil-by-mouth if surgical abdomen suspected.\n🚑 ADMIT/REFER: URGENT surgical referral for rigid/localized abdomen, guarding, or high fever with pain.",
+    "Vomiting / Nausea": "⚠ ESCALATE IF: unable to retain any fluids >12 hours, blood in vomit, or signs of moderate-severe dehydration.\n💊 Drug combination: Metoclopramide 10mg IV/IM + ORS once tolerated.\n💉 Infusion: IV Normal Saline 0.9% — bolus if dehydrated, then maintenance.\n🚑 ADMIT/REFER: signs of dehydration/shock, blood in vomit, or unable to keep IV medication down.",
+    "Diarrhoea": "⚠ ESCALATE IF: sunken eyes, very dry mouth, lethargy, or reduced urine output — signs of severe dehydration.\n💊 Drug combination: ORS + Zinc + Metronidazole (if dysentery); avoid anti-motility agents in children.\n💉 Infusion: IV Ringer's Lactate or Normal Saline bolus 20ml/kg for severe dehydration, reassess and repeat as needed.\n🚑 ADMIT/REFER: URGENT for severe dehydration, blood in stool, or shock — this can be life-threatening in children.",
+    "Constipation": "⚠ ESCALATE IF: severe distension, vomiting, or complete inability to pass stool/gas — possible obstruction.\n💊 Drug combination: not applicable for routine cases; obstruction requires hospital management, not laxatives.\n💉 Infusion: IV Normal Saline if vomiting/dehydrated while awaiting referral.\n🚑 ADMIT/REFER: URGENT if distension with vomiting or no stool/flatus for several days.",
+    "Food poisoning": "⚠ ESCALATE IF: multiple students affected simultaneously, severe dehydration, or bloody diarrhoea — possible outbreak.\n💊 Drug combination: ORS + Metoclopramide for vomiting + Metronidazole if dysentery features.\n💉 Infusion: IV Normal Saline bolus for dehydrated/shocked patients.\n🚑 ADMIT/REFER: URGENT if multiple casualties, severe dehydration, or bloody stool — notify school administration and public health.",
+    "Gastroenteritis": "⚠ ESCALATE IF: signs of moderate-severe dehydration or persistent high fever.\n💊 Drug combination: ORS + Zinc + Metronidazole 400mg TDS if dysentery suspected.\n💉 Infusion: IV Ringer's Lactate/Normal Saline 20ml/kg bolus for dehydration, then maintenance.\n🚑 ADMIT/REFER: dehydration not correcting with oral therapy, or high fever with lethargy.",
+    "Peptic ulcer symptoms / Heartburn": "⚠ ESCALATE IF: vomiting blood, black tarry stool, or sudden severe abdominal pain — possible bleed/perforation.\n💊 Drug combination: IV Omeprazole (if available) + antacid; avoid NSAIDs.\n💉 Infusion: IV Normal Saline if hypovolaemic from bleeding.\n🚑 ADMIT/REFER: URGENT for any GI bleeding sign or sudden severe pain — surgical emergency possible.",
+    "Worm infestation symptoms": "⚠ ESCALATE IF: severe abdominal distension/pain with vomiting — possible bowel obstruction from heavy worm load.\n💊 Drug combination: Mebendazole once obstruction excluded; Iron/Folic acid for associated anaemia.\n💉 Infusion: IV Normal Saline if vomiting/dehydrated.\n🚑 ADMIT/REFER: obstruction signs, severe anaemia, or failure to respond to deworming.",
+    "Cough / Cold / URTI": "⚠ ESCALATE IF: fast/laboured breathing, chest indrawing, or blue lips — possible pneumonia/respiratory distress.\n💊 Drug combination: Amoxicillin (if bacterial pneumonia suspected) + Paracetamol; Salbutamol nebulization if wheeze present.\n💉 Infusion: IV Normal Saline if unable to feed/drink due to respiratory distress.\n🚑 ADMIT/REFER: URGENT for chest indrawing, cyanosis, or oxygen saturation concerns.",
+    "Sore throat / Pharyngitis": "⚠ ESCALATE IF: difficulty swallowing own saliva (drooling), muffled voice, or stridor — possible airway-threatening infection.\n💊 Drug combination: IV Ceftriaxone/Amoxicillin + Paracetamol/Ibuprofen for pain.\n💉 Infusion: IV Normal Saline to maintain hydration if swallowing is painful/difficult.\n🚑 ADMIT/REFER: URGENT for drooling, stridor, or muffled voice — risk of airway obstruction (e.g. epiglottitis, peritonsillar abscess).",
+    "Asthma attack / Difficulty breathing": "⚠ ESCALATE IF: unable to speak full sentences, silent chest, exhaustion, or no response to inhaler after repeated doses.\n💊 Drug combination: Salbutamol nebulized/inhaler (back-to-back doses) + IV Hydrocortisone + Ipratropium bromide if severe.\n💉 Infusion: IV Normal Saline maintenance; oxygen if available (not a drug but essential).\n🚑 ADMIT/REFER: URGENT — life-threatening asthma requires immediate hospital transfer with oxygen en route.",
+    "Sinusitis symptoms": "⚠ ESCALATE IF: eye swelling/redness, severe headache, or altered consciousness — rare orbital/intracranial spread.\n💊 Drug combination: Amoxicillin + Paracetamol for pain; decongestant for symptomatic relief.\n💉 Infusion: not typically required for uncomplicated sinusitis.\n🚑 ADMIT/REFER: URGENT for eye swelling, severe headache, or neurological signs.",
+    "Ear pain / Otitis": "⚠ ESCALATE IF: swelling behind the ear, high fever, or severe headache — possible mastoiditis.\n💊 Drug combination: Amoxicillin + Paracetamol for pain.\n💉 Infusion: not typically required.\n🚑 ADMIT/REFER: swelling behind ear, persistent high fever, or signs of spreading infection.",
+    "Nose bleed / Epistaxis": "⚠ ESCALATE IF: bleeding uncontrolled after 20+ minutes of direct pressure, or recurrent heavy bleeds.\n💊 Drug combination: none specific — focus on mechanical control (pressure, nasal packing if trained).\n💉 Infusion: IV Normal Saline if significant blood loss/dizziness/low BP.\n🚑 ADMIT/REFER: URGENT for uncontrolled bleeding, signs of significant blood loss, or recurrent unexplained bleeds.",
+    "Eye infection / Conjunctivitis": "⚠ ESCALATE IF: severe pain, vision loss, or eyelid swelling with fever — possible orbital cellulitis.\n💊 Drug combination: topical Chloramphenicol + oral Amoxicillin if spreading infection suspected.\n💉 Infusion: not typically required for simple conjunctivitis.\n🚑 ADMIT/REFER: URGENT for vision changes, severe pain, or eyelid/orbital swelling.",
+    "Eye injury / Foreign body in eye": "⚠ ESCALATE IF: penetrating injury, chemical exposure, or foreign body not easily removed.\n💊 Drug combination: copious irrigation is the priority treatment for chemical exposure — not a drug combination scenario.\n💉 Infusion: IV analgesia (Paracetamol) if in significant pain awaiting transfer.\n🚑 ADMIT/REFER: URGENT for any penetrating injury or chemical burn — irrigate continuously en route to hospital.",
+    "Toothache / Dental pain": "⚠ ESCALATE IF: facial swelling spreading to neck/floor of mouth, difficulty swallowing/breathing — possible Ludwig's angina.\n💊 Drug combination: IV/oral Amoxicillin + Metronidazole (dental infection combination) + Paracetamol/Ibuprofen for pain.\n💉 Infusion: IV Normal Saline if unable to swallow due to pain/swelling.\n🚑 ADMIT/REFER: URGENT for spreading facial/neck swelling or breathing/swallowing difficulty.",
+    "Gum infection / Bleeding gums": "⚠ ESCALATE IF: facial swelling, fever, or spreading infection.\n💊 Drug combination: Amoxicillin + Metronidazole combination for dental/gum infections.\n💉 Infusion: not typically required unless systemically unwell.\n🚑 ADMIT/REFER: facial swelling, fever, or infection not responding to antibiotics.",
+    "Skin rash / Dermatitis": "⚠ ESCALATE IF: widespread blistering/skin peeling, mucosal involvement, or fever — possible severe drug reaction (Stevens-Johnson syndrome).\n💊 Drug combination: IV Hydrocortisone + Chlorphenamine for severe reactions; stop any suspected causative medication immediately.\n💉 Infusion: IV Normal Saline for fluid losses if extensive skin involvement.\n🚑 ADMIT/REFER: URGENT for blistering/peeling skin, mucosal involvement, or fever with rash.",
+    "Ringworm / Fungal infection": "⚠ ESCALATE IF: rare — widespread infection with secondary bacterial cellulitis.\n💊 Drug combination: topical antifungal + oral Amoxicillin only if secondary bacterial infection present.\n💉 Infusion: not applicable.\n🚑 ADMIT/REFER: only if secondary infection causes spreading redness/fever.",
+    "Scabies": "⚠ ESCALATE IF: widespread secondary bacterial infection with fever (crusted/severe scabies).\n💊 Drug combination: Permethrin + oral Amoxicillin if secondary infection/sepsis signs present.\n💉 Infusion: IV Normal Saline if systemically unwell/septic.\n🚑 ADMIT/REFER: fever, spreading redness, or signs of sepsis from secondary infection.",
+    "Boils / Abscess": "⚠ ESCALATE IF: red streaking from the boil, high fever, or the boil is large/deep — possible spreading cellulitis/sepsis.\n💊 Drug combination: IV/oral Amoxicillin + Metronidazole if spreading cellulitis; incision and drainage often needed for large abscesses.\n💉 Infusion: IV Normal Saline if systemically unwell/septic.\n🚑 ADMIT/REFER: red streaking, high fever, or abscess too large/deep for safe drainage at school level.",
+    "Head lice / Pediculosis": "⚠ ESCALATE IF: rare — secondary infected scalp sores with spreading redness/fever.\n💊 Drug combination: Permethrin + oral Amoxicillin only if secondary bacterial infection.\n💉 Infusion: not applicable.\n🚑 ADMIT/REFER: only if secondary scalp infection with fever/spreading redness.",
+    "Injury / Wound / Laceration": "⚠ ESCALATE IF: bleeding not controlled with direct pressure, wound is deep/large, or signs of shock (pale, cold, rapid pulse).\n💊 Drug combination: IV Paracetamol for pain + Amoxicillin if contaminated wound + tetanus toxoid.\n💉 Infusion: IV Normal Saline/Ringer's Lactate bolus if signs of significant blood loss/shock.\n🚑 ADMIT/REFER: URGENT for uncontrolled bleeding, deep wounds needing suturing, or shock.",
+    "Minor burns": "⚠ ESCALATE IF: burn is large (>10% body surface), full-thickness, involves face/hands/genitals, or circumferential.\n💊 Drug combination: IV Paracetamol/Ibuprofen for pain + Amoxicillin if signs of infection.\n💉 Infusion: IV Ringer's Lactate per burns fluid resuscitation protocol for large burns — refer for exact calculation.\n🚑 ADMIT/REFER: URGENT for large/deep burns, or burns to face/hands/genitals/airway involvement.",
+    "Sprain / Ankle twist": "⚠ ESCALATE IF: severe swelling with numbness/pale limb, or unable to bear any weight — rule out fracture/compartment syndrome.\n💊 Drug combination: Ibuprofen + Paracetamol combination for pain/inflammation.\n💉 Infusion: not typically required.\n🚑 ADMIT/REFER: suspected fracture, numbness, or pale/cold limb distal to injury.",
+    "Suspected fracture": "⚠ ESCALATE IF: open fracture (bone through skin), deformity, or numbness/pale limb distal to injury — neurovascular compromise.\n💊 Drug combination: IV Paracetamol + Ibuprofen for pain (avoid food/drink in case surgery needed).\n💉 Infusion: IV Normal Saline if in significant pain/shock, keep nil-by-mouth.\n🚑 ADMIT/REFER: URGENT for all suspected fractures, especially open fractures or neurovascular compromise.",
+    "Bruise / Contusion": "⚠ ESCALATE IF: extensive unexplained bruising, bruising with bleeding from gums/nose, or suspected bleeding disorder.\n💊 Drug combination: Paracetamol for pain — avoid Ibuprofen/Aspirin if bleeding disorder suspected.\n💉 Infusion: not typically required.\n🚑 ADMIT/REFER: extensive/unexplained bruising or associated bleeding from other sites.",
+    "Insect bite / Sting": "⚠ ESCALATE IF: facial/throat swelling, breathing difficulty, or widespread hives — anaphylaxis.\n💊 Drug combination: IM Adrenaline 1:1000 immediately for anaphylaxis + IV Chlorphenamine + IV Hydrocortisone.\n💉 Infusion: IV Normal Saline bolus if hypotensive.\n🚑 ADMIT/REFER: URGENT — do not delay adrenaline administration if anaphylaxis suspected.",
+    "Snake bite": "⚠ ESCALATE IF: any snake bite — always treat as potentially serious until proven otherwise.\n💊 Drug combination: Antivenom (hospital-administered only) + IV Paracetamol for pain — avoid Aspirin/NSAIDs (bleeding risk).\n💉 Infusion: IV Normal Saline/Ringer's Lactate to maintain circulation en route to hospital.\n🚑 ADMIT/REFER: URGENT — immediate hospital transfer required for antivenom; immobilise limb, do not cut/suck the wound.",
+    "Back pain": "⚠ ESCALATE IF: loss of bladder/bowel control, numbness in groin/legs, or progressive leg weakness — possible cauda equina (rare).\n💊 Drug combination: Ibuprofen + Paracetamol combination for pain.\n💉 Infusion: not typically required.\n🚑 ADMIT/REFER: URGENT for any bladder/bowel/leg weakness symptoms — surgical emergency.",
+    "Muscle cramps / Body pain": "⚠ ESCALATE IF: dark/tea-coloured urine with severe muscle pain — possible rhabdomyolysis (rare, e.g. after extreme exertion).\n💊 Drug combination: ORS/electrolyte replacement + Paracetamol for pain.\n💉 Infusion: IV Normal Saline if dark urine/severe muscle breakdown suspected.\n🚑 ADMIT/REFER: dark urine with muscle pain, or cramps not resolving with rest/hydration.",
+    "Joint pain / Arthralgia": "⚠ ESCALATE IF: single hot, swollen, red joint with fever — possible septic arthritis (surgical emergency).\n💊 Drug combination: IV Ceftriaxone (if septic arthritis suspected) + Paracetamol/Ibuprofen for pain.\n💉 Infusion: IV Normal Saline if systemically unwell.\n🚑 ADMIT/REFER: URGENT for hot/swollen/red single joint with fever.",
+    "Fainting / Syncope": "⚠ ESCALATE IF: not regaining consciousness quickly, injury from the fall, chest pain preceding the episode, or recurrent episodes.\n💊 Drug combination: none specific for simple faint — glucose if hypoglycaemia suspected/confirmed.\n💉 Infusion: IV Normal Saline if prolonged unconsciousness or dehydration contributed.\n🚑 ADMIT/REFER: URGENT for prolonged unconsciousness, injury, chest pain, or recurrent fainting — cardiac cause must be excluded.",
+    "Seizure / Convulsion": "⚠ ESCALATE IF: seizure lasts >5 minutes, repeated seizures without regaining consciousness (status epilepticus), or first-ever seizure.\n💊 Drug combination: Diazepam (rectal/IV) as first-line anticonvulsant + glucose check/correction if hypoglycaemic.\n💉 Infusion: IV Normal Saline once accessible; IV Dextrose if hypoglycaemia confirmed.\n🚑 ADMIT/REFER: URGENT for status epilepticus, first-ever seizure, or seizure with injury.",
+    "Dizziness / Vertigo": "⚠ ESCALATE IF: sudden onset with slurred speech, facial droop, limb weakness, or severe imbalance — possible stroke-like presentation.\n💊 Drug combination: none specific for simple vertigo — treat underlying cause (hydration, rest).\n💉 Infusion: IV Normal Saline if dehydration-related.\n🚑 ADMIT/REFER: URGENT for any stroke-like features (facial droop, slurred speech, limb weakness) — treat as time-critical.",
+    "Chest pain": "⚠ ESCALATE IF: any chest pain in a school setting — treat seriously regardless of age.\n💊 Drug combination: IV Paracetamol for analgesia while assessing — avoid Aspirin unless cardiac cause confirmed by a physician.\n💉 Infusion: IV Normal Saline keep-vein-open access while arranging transfer.\n🚑 ADMIT/REFER: URGENT for all chest pain — immediate hospital transfer, monitor airway/breathing/pulse en route.",
+    "Palpitations": "⚠ ESCALATE IF: irregular pulse, chest pain, fainting, or breathlessness accompanying palpitations.\n💊 Drug combination: not applicable at school level — arrhythmia management requires ECG assessment in hospital.\n💉 Infusion: IV access for monitoring if arranging transfer.\n🚑 ADMIT/REFER: URGENT for irregular pulse, chest pain, or fainting with palpitations — possible arrhythmia.",
+    "Heat exhaustion / Heat stroke": "⚠ ESCALATE IF: temperature >40°C, confusion, or not sweating despite heat (heat stroke) — life-threatening.\n💊 Drug combination: Paracetamol is NOT effective for heat stroke — active cooling is the priority treatment.\n💉 Infusion: IV Normal Saline/Ringer's Lactate bolus for rehydration and to support cooling and circulation.\n🚑 ADMIT/REFER: URGENT for confusion, very high temperature, or absent sweating — cool aggressively en route.",
+    "Dehydration": "⚠ ESCALATE IF: sunken eyes, very dry mouth, lethargy/unconsciousness, or unable to retain oral fluids.\n💊 Drug combination: ORS for mild-moderate; treat underlying cause (diarrhoea, vomiting, heat).\n💉 Infusion: IV Ringer's Lactate/Normal Saline bolus 20ml/kg for severe dehydration, reassess and repeat.\n🚑 ADMIT/REFER: URGENT for severe dehydration signs or failure to respond to IV fluids.",
+    "Sickle cell crisis": "⚠ ESCALATE IF: severe pain unresponsive to standard analgesia, fever, chest pain, or breathing difficulty (acute chest syndrome).\n💊 Drug combination: IV Paracetamol + Ibuprofen/Diclofenac combination for pain; escalate to stronger analgesia in hospital if needed.\n💉 Infusion: IV Normal Saline for hydration — key part of crisis management alongside pain control.\n🚑 ADMIT/REFER: URGENT for severe unremitting pain, fever, or breathing difficulty — sickle cell crisis requires specialist care.",
+    "Hypertension symptoms": "⚠ ESCALATE IF: very high BP reading with headache, vision changes, chest pain, or confusion — hypertensive emergency.\n💊 Drug combination: hospital-administered antihypertensives only — do not initiate new antihypertensive therapy at school level.\n💉 Infusion: IV access for monitoring while arranging urgent transfer.\n🚑 ADMIT/REFER: URGENT for very high BP with any symptoms — this is a medical emergency, not routine hypertension.",
+    "Diabetes symptoms / Hyperglycaemia": "⚠ ESCALATE IF: fruity breath odour, deep rapid breathing, vomiting, or confusion — possible diabetic ketoacidosis (DKA).\n💊 Drug combination: hospital-administered insulin protocol only — do not attempt insulin correction at school level.\n💉 Infusion: IV Normal Saline while arranging urgent transfer (rehydration is first step of DKA management).\n🚑 ADMIT/REFER: URGENT for any DKA features — this is a life-threatening emergency requiring hospital management.",
+    "Hypoglycaemia / Low blood sugar": "⚠ ESCALATE IF: unconscious or unable to swallow safely — cannot give oral sugar.\n💊 Drug combination: IV Dextrose 10% or IM Glucagon if unconscious/unable to swallow; oral glucose if conscious.\n💉 Infusion: IV Dextrose 10% bolus, then maintenance infusion until stable and eating normally.\n🚑 ADMIT/REFER: URGENT if unconscious, not improving after treatment, or recurrent episodes.",
+    "Anaemia symptoms / Pallor": "⚠ ESCALATE IF: breathlessness at rest, rapid heart rate, or fainting — possible severe anaemia/high-output heart failure.\n💊 Drug combination: Iron/Folic acid is NOT sufficient for severe symptomatic anaemia — hospital transfusion may be required.\n💉 Infusion: IV Normal Saline keep-vein-open access while arranging urgent transfer (blood transfusion needs hospital setting).\n🚑 ADMIT/REFER: URGENT for breathlessness at rest, rapid heart rate, or fainting with pallor.",
+    "Malnutrition signs": "⚠ ESCALATE IF: severe wasting, bilateral leg swelling (oedema), or associated infection/dehydration — severe acute malnutrition.\n💊 Drug combination: cautious refeeding under supervision — avoid rapid high-calorie feeding (refeeding syndrome risk).\n💉 Infusion: IV fluids only under hospital supervision — rapid fluid administration is dangerous in severe malnutrition.\n🚑 ADMIT/REFER: URGENT for severe wasting, oedema, or malnutrition with infection.",
+    "Allergic reaction": "⚠ ESCALATE IF: facial/throat swelling, breathing difficulty, widespread hives, or dizziness/collapse — anaphylaxis.\n💊 Drug combination: IM Adrenaline 1:1000 immediately (first-line, do not substitute) + IV Chlorphenamine + IV Hydrocortisone as follow-up.\n💉 Infusion: IV Normal Saline bolus for hypotension.\n🚑 ADMIT/REFER: URGENT — administer adrenaline without delay and transfer immediately; observe for biphasic reaction even after improvement.",
+    "Urinary tract infection": "⚠ ESCALATE IF: fever, flank/back pain, or vomiting — possible pyelonephritis/urosepsis.\n💊 Drug combination: IV Ceftriaxone (if urosepsis suspected) + Paracetamol for fever; oral Nitrofurantoin for uncomplicated cases.\n💉 Infusion: IV Normal Saline if febrile/dehydrated/vomiting.\n🚑 ADMIT/REFER: URGENT for fever with flank pain, vomiting, or signs of systemic infection.",
+    "Bedwetting / Enuresis": "⚠ ESCALATE IF: rare — associated with fever, pain, or new-onset in a previously dry child (may indicate underlying illness).\n💊 Drug combination: not applicable — investigate underlying cause rather than treat as emergency.\n💉 Infusion: not applicable.\n🚑 ADMIT/REFER: only if associated with fever, pain, or other concerning new symptoms.",
+    "Menstrual pain / Dysmenorrhoea": "⚠ ESCALATE IF: extremely heavy bleeding (soaking pad hourly), severe pain unresponsive to analgesia, or signs of anaemia/dizziness.\n💊 Drug combination: Ibuprofen + Hyoscine (Buscopan) combination for severe cramping.\n💉 Infusion: IV Normal Saline if dizzy/hypovolaemic from heavy bleeding.\n🚑 ADMIT/REFER: heavy bleeding soaking a pad hourly, severe unresponsive pain, or dizziness/pallor.",
+    "Irregular menstruation": "⚠ ESCALATE IF: very heavy prolonged bleeding with dizziness/pallor — possible significant blood loss.\n💊 Drug combination: Iron/Folic acid supplementation if associated anaemia; Ibuprofen for pain if present.\n💉 Infusion: IV Normal Saline if dizzy/hypovolaemic from heavy bleeding.\n🚑 ADMIT/REFER: very heavy/prolonged bleeding with dizziness or pallor — needs gynaecological assessment.",
+    "Anxiety / Stress / Emotional distress": "⚠ ESCALATE IF: expressed thoughts of self-harm, severe agitation, or inability to calm/reassure.\n💊 Drug combination: not applicable at school level — this requires psychological/safeguarding response, not medication.\n💉 Infusion: not applicable.\n🚑 ADMIT/REFER: URGENT and confidential referral to school counsellor/safeguarding lead for any self-harm or safety concern — treat as a priority alongside physical emergencies.",
+    "Panic attack": "⚠ ESCALATE IF: chest pain, breathlessness not improving with reassurance, or first-ever episode in someone with cardiac risk factors.\n💊 Drug combination: not applicable at school level — breathing/grounding techniques are first-line, not medication.\n💉 Infusion: not applicable.\n🚑 ADMIT/REFER: if chest pain or breathlessness persists despite calming measures, treat as possible cardiac/respiratory cause and refer.",
+    "Insomnia / Sleep difficulty": "⚠ ESCALATE IF: rare — associated with severe mood disturbance or safety concerns.\n💊 Drug combination: not applicable — sedatives are not appropriate for school-level management of adolescent insomnia.\n💉 Infusion: not applicable.\n🚑 ADMIT/REFER: refer to counsellor if linked to mood/anxiety; refer urgently if any safety concern disclosed.",
+  };
+
   // ── Drug combinations ─────────────────────────────────
   var DRUG_COMBOS = [
     {name:"Malaria (Adult)", drugs:["Artemether-Lumefantrine (Coartem) — 4 tabs BD for 3 days","Paracetamol 500mg — 1-2 tabs TDS for 3 days","ORS — as needed for hydration"]},
@@ -6569,13 +6653,37 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
     "Cough syrup","Mebendazole (Vermox)"
   ];
 
+  // ── Pediatric / weight-based dosing reference ─────────
+  // Every dose written into TREATMENT_PRACTICES / EMERGENCY_PROTOCOLS above is a
+  // flat adolescent/adult dose (e.g. "Paracetamol 500mg") — safe for JSS-SS
+  // students, NOT safe for younger children once Nursery/Primary are added.
+  // Cross-check against this table (mg/kg) before dosing anyone under ~12
+  // years or ~30kg.
+  var PEDIATRIC_DOSING = [
+    {drug:"Paracetamol", dose:"15mg/kg per dose, every 4-6 hours (max 4 doses/day)", note:"Use paediatric syrup, not adult tablets, under ~12 years/30kg"},
+    {drug:"Ibuprofen", dose:"5-10mg/kg per dose, every 6-8 hours with food", note:"Avoid if dehydrated or asthma history"},
+    {drug:"Amoxicillin", dose:"25mg/kg per dose, every 8 hours", note:"Use paediatric suspension"},
+    {drug:"Artemether-Lumefantrine (Coartem)", dose:"5-<15kg: 1 tab/dose · 15-<25kg: 2 tabs/dose · 25-<35kg: 3 tabs/dose · ≥35kg: 4 tabs/dose — all BD × 3 days", note:"Give with fatty food/milk for absorption"},
+    {drug:"Metronidazole", dose:"7.5mg/kg per dose, every 8 hours", note:"—"},
+    {drug:"Ciprofloxacin", dose:"10-15mg/kg per dose, every 12 hours", note:"Use with caution in young children — prefer hospital guidance"},
+    {drug:"Cotrimoxazole", dose:"4mg/kg (trimethoprim component), every 12 hours", note:"—"},
+    {drug:"ORS", dose:"50-100ml/kg over 4 hours (mild-moderate dehydration), then 10ml/kg per loose stool", note:"Small frequent sips"},
+    {drug:"Zinc", dose:"<6 months: 10mg/day · ≥6 months: 20mg/day, for 10-14 days", note:"For diarrhoea management"},
+    {drug:"Chlorphenamine (Piriton)", dose:"1-6 years: 1mg BD · 6-12 years: 2mg BD-TDS", note:"Sedating — advise caution"},
+    {drug:"Salbutamol (nebulized)", dose:"<5 years: 2.5mg/nebule · ≥5 years: 5mg/nebule", note:"Use spacer/mask if nebulizer unavailable"},
+    {drug:"Diazepam (seizure emergency)", dose:"Rectal 0.5mg/kg, or IV 0.3mg/kg slowly", note:"Emergency use only — monitor breathing"},
+    {drug:"Adrenaline (anaphylaxis emergency)", dose:"IM 0.01mg/kg of 1:1000 (max 0.3mg), repeat every 5-15 min if needed", note:"Do not delay if anaphylaxis suspected"},
+    {drug:"IV fluids (Normal Saline / Ringer's Lactate)", dose:"Bolus 10-20ml/kg over 15-30 min, reassess before repeating", note:"Use smaller boluses with caution in malnourished children"},
+    {drug:"Dextrose (hypoglycaemia emergency)", dose:"IV 2-5ml/kg of 10% Dextrose, given slowly", note:"Recheck blood glucose 15 min after"},
+  ];
+
   var DISPOSITIONS = [
     "Returned to class","Sent home","Referred to hospital",
     "Admitted to sick bay","Resting in clinic","Parent notified — monitoring"
   ];
 
   // Check all required fields filled
-  var formComplete = foundStudent &&
+  var formComplete = foundPatient &&
     form.presentingConditions.length > 0 &&
     form.diagnosis.trim() &&
     form.treatmentPlan.trim() &&
@@ -6613,20 +6721,25 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
 
   function saveConsultation(){
     if(!formComplete){ alert("Please complete all required fields before saving."); return; }
-    if(!foundStudent){ alert("Please select a student first."); return; }
+    if(!foundPatient){ alert("Please select a patient first."); return; }
     setSaving(true);
     var conditionText = (form.presentingConditions||[]).join(", ")+(form.otherCondition?", "+form.otherCondition:"");
+    var isStaffPatient = patientType==="Staff";
     var record = {
-      id:genId(), studentId:foundStudent.id,
-      admissionNo:foundStudent.admissionNo,
-      studentName:foundStudent.surname+" "+foundStudent.firstname,
-      class:foundStudent.class+(foundStudent.arm||""),
+      id:genId(),
+      patientType: patientType,
+      studentId: isStaffPatient ? null : foundPatient.id,
+      staffId: isStaffPatient ? foundPatient.id : null,
+      admissionNo: isStaffPatient ? ("Staff ID: "+foundPatient.id) : foundPatient.admissionNo,
+      studentName: foundPatient.surname+" "+foundPatient.firstname,
+      class: isStaffPatient ? ("Staff — "+(foundPatient.role||"Staff")) : foundPatient.class+(foundPatient.arm||""),
       date:today(), time:visitTime,
       presentingCondition:conditionText,
       vitalSigns:form.vitalSigns,
       diagnosis:form.diagnosis,
       treatmentPlan:form.treatmentPlan,
       treatmentPractice:form.treatmentPractice,
+      emergencyProtocol:form.emergencyProtocol,
       medications:form.medications,
       drugCombination:form.drugCombination,
       nurseName:form.nurseName||currentUser.name,
@@ -6637,16 +6750,16 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
       term:CURRENT_TERM,
     };
     setClinic(function(p){return[record,...p];});
-    // SMS parent
-    if(foundStudent.parentPhone){
-      var medList = form.medications.map(function(m){return m.drug;}).join(", ")||"as prescribed";
-      sendSMS(foundStudent.parentPhone,
-        "Dear Parent, "+foundStudent.firstname+" "+foundStudent.surname+" visited the school clinic today ("+today()+"). Condition: "+conditionText.slice(0,60)+". Disposition: "+form.disposition+". — "+SCHOOL_NAME,
-        "Clinic Notification"
-      );
+    // SMS parent (student) or staff member directly (staff patient)
+    var notifyPhone = isStaffPatient ? foundPatient.phone : foundPatient.parentPhone;
+    if(notifyPhone){
+      var msg = isStaffPatient
+        ? ("Dear "+foundPatient.firstname+", you visited the school clinic today ("+today()+"). Condition: "+conditionText.slice(0,60)+". Disposition: "+form.disposition+". — "+SCHOOL_NAME)
+        : ("Dear Parent, "+foundPatient.firstname+" "+foundPatient.surname+" visited the school clinic today ("+today()+"). Condition: "+conditionText.slice(0,60)+". Disposition: "+form.disposition+". — "+SCHOOL_NAME);
+      sendSMS(notifyPhone, msg, "Clinic Notification");
     }
     setSaving(false); setSaved(true);
-    setTimeout(function(){setSaved(false);setSelStudentId("");setForm(emptyForm);setVisitTime(new Date().toLocaleTimeString("en-NG",{hour:"2-digit",minute:"2-digit"}));},3000);
+    setTimeout(function(){setSaved(false);setSelStudentId("");setSelStaffId("");setForm(emptyForm);setVisitTime(new Date().toLocaleTimeString("en-NG",{hour:"2-digit",minute:"2-digit"}));},3000);
   }
 
   // ── Records filtering ──────────────────────────────────
@@ -6660,10 +6773,13 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
   var sickBay = clinic.filter(function(r){return r.disposition==="Admitted to sick bay";});
   var thisTermVisits = clinic.filter(function(r){return r.session===CURRENT_SESSION&&r.term===CURRENT_TERM;}).length;
   var visitMap = {};
-  clinic.forEach(function(r){visitMap[r.studentId]=(visitMap[r.studentId]||0)+1;});
+  clinic.forEach(function(r){var pid=recordPatientId(r); if(pid) visitMap[pid]=(visitMap[pid]||0)+1;});
   var frequent = Object.entries(visitMap).sort(function(a,b){return b[1]-a[1];}).slice(0,5).map(function(e){
     var s=students.find(function(st){return st.id===e[0];});
-    return{name:s?(s.surname+" "+s.firstname):"Unknown",count:e[1],class:s?(s.class+(s.arm||"")):"",id:e[0]};
+    if(s) return{name:s.surname+" "+s.firstname,count:e[1],class:s.class+(s.arm||""),id:e[0]};
+    var stf=staff.find(function(x){return x.id===e[0];});
+    if(stf) return{name:stf.surname+" "+stf.firstname,count:e[1],class:"Staff — "+(stf.role||""),id:e[0]};
+    return{name:"Unknown",count:e[1],class:"",id:e[0]};
   });
   var condMapObj={};
   clinic.filter(function(r){return r.session===CURRENT_SESSION&&r.term===CURRENT_TERM;}).forEach(function(r){
@@ -6671,6 +6787,66 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
     if(cond)condMapObj[cond]=(condMapObj[cond]||0)+1;
   });
   var conditionStats=Object.entries(condMapObj).sort(function(a,b){return b[1]-a[1];}).slice(0,10);
+
+  // ── Full medical history lookup (any student or staff) ──
+  var historyParts = historySel.split(":");
+  var historyType = historyParts[0]==="staff" ? "Staff" : historyParts[0]==="student" ? "Student" : null;
+  var historyPatient = historyType==="Staff" ? staff.find(function(s){return s.id===historyParts[1];}) : historyType==="Student" ? students.find(function(s){return s.id===historyParts[1];}) : null;
+  var historyRecords = historyPatient ? clinic.filter(function(r){return recordPatientId(r)===historyPatient.id;}).sort(function(a,b){return a.date===b.date?a.time.localeCompare(b.time):a.date.localeCompare(b.date);}) : [];
+
+  function buildMedicalHistoryHtml(patient, type, patientRecords){
+    var hdr = buildDocHeader(settings, (type==="Staff"?"STAFF":"STUDENT")+" MEDICAL HISTORY");
+    var idBlock = type==="Staff"
+      ? '<div class="info-row"><b>Name:</b> '+patient.surname+' '+patient.firstname+'</div><div class="info-row"><b>Role:</b> '+(patient.role||"Staff")+'</div><div class="info-row"><b>Gender:</b> '+(patient.gender||"—")+'</div><div class="info-row"><b>D.O.B:</b> '+(patient.dob?formatDate(patient.dob):"—")+'</div><div class="info-row"><b>Phone:</b> '+(patient.phone||"—")+'</div><div class="info-row"><b>Next of Kin:</b> '+(patient.nextOfKin||"—")+' ('+(patient.nextOfKinPhone||"—")+')</div>'
+      : '<div class="info-row"><b>Name:</b> '+patient.surname+' '+patient.firstname+'</div><div class="info-row"><b>Admission No.:</b> '+patient.admissionNo+'</div><div class="info-row"><b>Class:</b> '+patient.class+(patient.arm||"")+'</div><div class="info-row"><b>D.O.B:</b> '+(patient.dob?formatDate(patient.dob):"—")+'</div><div class="info-row"><b>Gender:</b> '+(patient.gender||"—")+'</div><div class="info-row"><b>Blood Group:</b> '+(patient.bloodGroup||"—")+' &nbsp;·&nbsp; <b>Genotype:</b> '+(patient.genotype||"—")+'</div><div class="info-row"><b>Parent/Guardian:</b> '+(patient.parentName||"—")+' ('+(patient.parentPhone||"—")+')</div>';
+
+    var rows = patientRecords.map(function(r){
+      var meds = (r.medications||[]).map(function(m){return m.drug;}).join(", ")||"—";
+      return '<tr><td>'+formatDate(r.date)+' '+r.time+'</td><td>'+r.presentingCondition+'</td><td>'+r.diagnosis+'</td><td style="white-space:pre-line;">'+(r.treatmentPlan||"—")+'</td><td>'+meds+'</td><td>'+r.disposition+'</td></tr>';
+    }).join("");
+
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Medical History</title><style>'+hdr.printStyles+
+      'table{width:100%;border-collapse:collapse;margin-top:10px;}th,td{border:1px solid #ccc;padding:6px;font-size:10px;text-align:left;vertical-align:top;}th{background:#8B0000;color:#fff;}'+
+      '.info-row{font-size:11px;margin-bottom:3px;}</style></head><body>'+
+      hdr.headerHtml+
+      '<h3 style="text-align:center;color:#8B0000;">'+(type==="Staff"?"STAFF":"STUDENT")+' MEDICAL HISTORY — CONFIDENTIAL</h3>'+
+      '<div style="border:1px solid #ccc;padding:10px;margin-bottom:10px;">'+idBlock+'</div>'+
+      '<div style="margin-bottom:8px;font-size:11px;"><b>Total clinic visits:</b> '+patientRecords.length+' &nbsp;|&nbsp; <b>Period covered:</b> '+(patientRecords.length?formatDate(patientRecords[0].date)+' to '+formatDate(patientRecords[patientRecords.length-1].date):"—")+'</div>'+
+      '<table><thead><tr><th>Date/Time</th><th>Presenting Condition</th><th>Diagnosis</th><th>Treatment Plan</th><th>Medications</th><th>Disposition</th></tr></thead><tbody>'+
+      (rows||'<tr><td colspan="6" style="text-align:center;color:#999;">No clinic visits recorded.</td></tr>')+
+      '</tbody></table>'+
+      '<div style="margin-top:16px;font-size:9px;color:#666;">This document is prepared for referral or record-keeping purposes and contains confidential health information. Handle in accordance with the school\'s data protection policy.</div>'+
+      hdr.footerHtml+'</body></html>';
+  }
+
+  // ── Drug intake report (day / week / month / term) ──
+  function isInDrugPeriod(r){
+    if(drugPeriod==="term") return r.session===CURRENT_SESSION && r.term===CURRENT_TERM;
+    if(drugPeriod==="day") return r.date===drugRefDate;
+    if(drugPeriod==="week"){
+      var ref = new Date(drugRefDate);
+      var day = ref.getDay();
+      var diffToMon = (day===0?-6:1-day);
+      var monday = new Date(ref); monday.setDate(ref.getDate()+diffToMon); monday.setHours(0,0,0,0);
+      var sunday = new Date(monday); sunday.setDate(monday.getDate()+6); sunday.setHours(23,59,59,999);
+      var rd = new Date(r.date);
+      return rd>=monday && rd<=sunday;
+    }
+    if(drugPeriod==="month") return r.date.slice(0,7)===drugRefDate.slice(0,7);
+    return true;
+  }
+  var drugFreqMap={};
+  clinic.filter(isInDrugPeriod).forEach(function(r){
+    (r.medications||[]).forEach(function(m){
+      if(!m.drug) return;
+      drugFreqMap[m.drug]=(drugFreqMap[m.drug]||0)+1;
+    });
+  });
+  var drugStats = Object.entries(drugFreqMap).sort(function(a,b){return b[1]-a[1];});
+  var drugPeriodLabel = drugPeriod==="term" ? (CURRENT_TERM+" "+CURRENT_SESSION)
+    : drugPeriod==="day" ? formatDate(drugRefDate)
+    : drugPeriod==="week" ? ("Week containing "+formatDate(drugRefDate))
+    : ("Month of "+formatDate(drugRefDate));
 
   return(
     <div>
@@ -6692,55 +6868,79 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
             </div>
           ) : (
             <div>
-              {/* STEP 1 — Class → Student → Time */}
+              {/* STEP 1 — Patient Type → Class/Student or Staff → Time */}
               <div style={{...S.card,marginBottom:14,borderLeft:"4px solid #DC2626"}}>
                 <div style={{fontSize:12,fontWeight:700,color:"#DC2626",marginBottom:12}}>STEP 1 — Select Patient</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr",gap:10,alignItems:"end"}}>
-                  <div style={S.formGroup}>
-                    <label style={S.label}>Class *</label>
-                    <select style={{...S.select,width:"100%"}} value={selClass} onChange={function(e){setSelClass(e.target.value);setSelStudentId("");}}>
-                      {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
-                    </select>
-                  </div>
-                  <div style={S.formGroup}>
-                    <label style={S.label}>Student Name *</label>
-                    <select style={{...S.select,width:"100%"}} value={selStudentId} onChange={function(e){setSelStudentId(e.target.value);}}>
-                      <option value="">— Select Student —</option>
-                      {classStudents.map(function(s){return <option key={s.id} value={s.id}>{s.surname} {s.firstname} {s.middlename||""}</option>;})}
-                    </select>
-                  </div>
-                  <div style={S.formGroup}>
-                    <label style={S.label}>Time of Visit</label>
-                    <input style={S.input} value={visitTime} onChange={function(e){setVisitTime(e.target.value);}} placeholder="HH:MM"/>
-                  </div>
+                <div style={{...S.row,gap:8,marginBottom:12}}>
+                  {["Student","Staff"].map(function(t){
+                    return <button key={t} type="button" onClick={function(){setPatientType(t);setSelStudentId("");setSelStaffId("");}} style={{...S.btn(patientType===t?"primary":"secondary"),fontSize:11}}>{t==="Student"?"🎓 Student":"👤 Staff"}</button>;
+                  })}
                 </div>
+                {patientType==="Student"?(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr",gap:10,alignItems:"end"}}>
+                    <div style={S.formGroup}>
+                      <label style={S.label}>Class *</label>
+                      <select style={{...S.select,width:"100%"}} value={selClass} onChange={function(e){setSelClass(e.target.value);setSelStudentId("");}}>
+                        {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                      </select>
+                    </div>
+                    <div style={S.formGroup}>
+                      <label style={S.label}>Student Name *</label>
+                      <select style={{...S.select,width:"100%"}} value={selStudentId} onChange={function(e){setSelStudentId(e.target.value);}}>
+                        <option value="">— Select Student —</option>
+                        {classStudents.map(function(s){return <option key={s.id} value={s.id}>{s.surname} {s.firstname} {s.middlename||""}</option>;})}
+                      </select>
+                    </div>
+                    <div style={S.formGroup}>
+                      <label style={S.label}>Time of Visit</label>
+                      <input style={S.input} value={visitTime} onChange={function(e){setVisitTime(e.target.value);}} placeholder="HH:MM"/>
+                    </div>
+                  </div>
+                ):(
+                  <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,alignItems:"end"}}>
+                    <div style={S.formGroup}>
+                      <label style={S.label}>Staff Name *</label>
+                      <select style={{...S.select,width:"100%"}} value={selStaffId} onChange={function(e){setSelStaffId(e.target.value);}}>
+                        <option value="">— Select Staff —</option>
+                        {activeStaff.map(function(s){return <option key={s.id} value={s.id}>{s.surname} {s.firstname} ({s.role||"Staff"})</option>;})}
+                      </select>
+                    </div>
+                    <div style={S.formGroup}>
+                      <label style={S.label}>Time of Visit</label>
+                      <input style={S.input} value={visitTime} onChange={function(e){setVisitTime(e.target.value);}} placeholder="HH:MM"/>
+                    </div>
+                  </div>
+                )}
 
-                {/* Student biodata display */}
-                {foundStudent ? (
+                {/* Patient biodata display */}
+                {foundPatient ? (
                   <div style={{marginTop:12,background:"linear-gradient(120deg,#230E6A,#3D2496)",borderRadius:10,padding:"14px 18px",color:"#fff"}}>
                     <div style={{fontSize:10,opacity:0.7,fontWeight:600,marginBottom:8}}>PATIENT BIODATA</div>
                     <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
                       <div style={{width:54,height:54,borderRadius:"50%",overflow:"hidden",border:"2px solid #F0C060",flexShrink:0,background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        {foundStudent.passport?<img src={foundStudent.passport} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:22}}>👤</span>}
+                        {foundPatient.passport?<img src={foundPatient.passport} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:22}}>👤</span>}
                       </div>
                       <div style={{flex:1}}>
-                        <div style={{fontSize:15,fontWeight:900,color:"#F0C060"}}>{foundStudent.surname} {foundStudent.firstname} {foundStudent.middlename||""}</div>
+                        <div style={{fontSize:15,fontWeight:900,color:"#F0C060"}}>{foundPatient.surname} {foundPatient.firstname} {foundPatient.middlename||""}</div>
                         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:4,marginTop:8}}>
-                          {[["Admission No.",foundStudent.admissionNo],["Class",foundStudent.class+(foundStudent.arm||"")],["Gender",foundStudent.gender],["D.O.B",formatDate(foundStudent.dob)],["Blood Group",foundStudent.bloodGroup||"—"],["Genotype",foundStudent.genotype||"—"],["Boarding",foundStudent.boardingType||"Day"],["Parent Phone",foundStudent.parentPhone||"—"],["Religion",foundStudent.religion||"—"]].map(function(pair){
+                          {(patientType==="Student"
+                            ? [["Admission No.",foundPatient.admissionNo],["Class",foundPatient.class+(foundPatient.arm||"")],["Gender",foundPatient.gender],["D.O.B",formatDate(foundPatient.dob)],["Blood Group",foundPatient.bloodGroup||"—"],["Genotype",foundPatient.genotype||"—"],["Boarding",foundPatient.boardingType||"Day"],["Parent Phone",foundPatient.parentPhone||"—"],["Religion",foundPatient.religion||"—"]]
+                            : [["Role",foundPatient.role||"Staff"],["Gender",foundPatient.gender],["D.O.B",formatDate(foundPatient.dob)],["Phone",foundPatient.phone||"—"],["Qualification",foundPatient.qualification||"—"],["Classes Taught",(foundPatient.classes||[]).join(", ")||"—"],["Next of Kin",foundPatient.nextOfKin||"—"],["Next of Kin Phone",foundPatient.nextOfKinPhone||"—"]]
+                          ).map(function(pair){
                             return <div key={pair[0]}><div style={{fontSize:8,opacity:0.6,fontWeight:600}}>{pair[0]}</div><div style={{fontSize:10,fontWeight:700}}>{pair[1]}</div></div>;
                           })}
                         </div>
                       </div>
                     </div>
-                    {clinic.filter(function(r){return r.studentId===foundStudent.id;}).length>0?(
+                    {clinic.filter(function(r){return recordPatientId(r)===foundPatient.id;}).length>0?(
                       <div style={{marginTop:10,background:"rgba(255,255,255,0.1)",borderRadius:6,padding:"8px 12px"}}>
-                        <div style={{fontSize:9,opacity:0.7,marginBottom:4}}>PREVIOUS VISITS ({clinic.filter(function(r){return r.studentId===foundStudent.id;}).length} total)</div>
-                        {clinic.filter(function(r){return r.studentId===foundStudent.id;}).slice(0,2).map(function(r,i){return <div key={i} style={{fontSize:9,opacity:0.85}}>{r.date} — {r.presentingCondition.slice(0,50)} → {r.diagnosis.slice(0,40)}</div>;})}
+                        <div style={{fontSize:9,opacity:0.7,marginBottom:4}}>PREVIOUS VISITS ({clinic.filter(function(r){return recordPatientId(r)===foundPatient.id;}).length} total)</div>
+                        {clinic.filter(function(r){return recordPatientId(r)===foundPatient.id;}).slice(0,2).map(function(r,i){return <div key={i} style={{fontSize:9,opacity:0.85}}>{r.date} — {r.presentingCondition.slice(0,50)} → {r.diagnosis.slice(0,40)}</div>;})}
                       </div>
                     ):null}
                   </div>
                 ) : (
-                  <div style={{marginTop:10,background:"#F9FAFB",borderRadius:8,padding:16,textAlign:"center",color:C.textMuted,fontSize:12}}>Select a class and student name above to see their biodata</div>
+                  <div style={{marginTop:10,background:"#F9FAFB",borderRadius:8,padding:16,textAlign:"center",color:C.textMuted,fontSize:12}}>Select a {patientType.toLowerCase()} above to see their biodata</div>
                 )}
               </div>
 
@@ -6810,9 +7010,42 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
                 <textarea style={{...S.textarea,minHeight:90}} value={form.treatmentPlan} onChange={function(e){setForm(function(p){return{...p,treatmentPlan:e.target.value};});}} placeholder="Outline the full treatment plan..."/>
               </div>
 
+              {/* STEP 5b — Emergency / Admission Protocol */}
+              <div style={{...S.card,marginBottom:14,borderLeft:"4px solid #B91C1C",background:"#FEF2F2"}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#B91C1C",marginBottom:4}}>⚠ Emergency / Admission Protocol (if condition escalates)</div>
+                <div style={{fontSize:10,color:C.textMuted,marginBottom:10}}>Load this if the patient needs to be admitted to sick bay or referred — includes stabilization steps, drug combinations, and IV infusion guidance.</div>
+                <div style={{marginBottom:10}}>
+                  <select style={{...S.select,width:"100%"}} value="" onChange={function(e){
+                    if(e.target.value&&EMERGENCY_PROTOCOLS[e.target.value]){
+                      setForm(function(p){return{...p,emergencyProtocol:EMERGENCY_PROTOCOLS[e.target.value]};});
+                    }
+                  }}>
+                    <option value="">— Select a condition to load emergency protocol —</option>
+                    {Object.keys(EMERGENCY_PROTOCOLS).map(function(k){return <option key={k} value={k}>{k}</option>;})}
+                  </select>
+                </div>
+                {form.emergencyProtocol?(
+                  <div>
+                    <textarea style={{...S.textarea,minHeight:110,borderColor:"#B91C1C",whiteSpace:"pre-line"}} value={form.emergencyProtocol} onChange={function(e){setForm(function(p){return{...p,emergencyProtocol:e.target.value};});}}/>
+                    <button type="button" style={{...S.btn("secondary"),fontSize:10,marginTop:6}} onClick={function(){setForm(function(p){return{...p,emergencyProtocol:""};});}}>Clear</button>
+                  </div>
+                ):null}
+              </div>
+
               {/* STEP 6 — Medications with combinations */}
               <div style={{...S.card,marginBottom:14,borderLeft:"4px solid #6B491B"}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#6B491B",marginBottom:10}}>STEP 6 — Medications Dispensed</div>
+                <div style={{...S.row,justifyContent:"space-between",marginBottom:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#6B491B"}}>STEP 6 — Medications Dispensed</div>
+                  <button type="button" style={{...S.btn(showPedDosing?"primary":"secondary"),fontSize:10,padding:"4px 10px"}} onClick={function(){setShowPedDosing(function(p){return !p;});}}>👶 {showPedDosing?"Hide":"Show"} Pediatric Dosing Reference</button>
+                </div>
+                {showPedDosing?(
+                  <div style={{...S.card,background:"#EFF6FF",border:"1px solid #93C5FD",marginBottom:12}}>
+                    <div style={{fontSize:10,color:"#1D4ED8",marginBottom:8}}>⚠ All doses in the Best Practice / Emergency Protocol templates above are adolescent/adult doses (safe for JSS-SS students). For any child under ~12 years or ~30kg, use weight-based dosing below instead.</div>
+                    <table style={S.table}><thead><tr>{["Drug","Weight/Age-Based Dose","Note"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
+                      <tbody>{PEDIATRIC_DOSING.map(function(p,i){return <tr key={i}><td style={{...S.td,fontWeight:600}}>{p.drug}</td><td style={S.td}>{p.dose}</td><td style={{...S.td,fontSize:10,color:C.textMuted}}>{p.note}</td></tr>;})}</tbody>
+                    </table>
+                  </div>
+                ):null}
 
                 {/* Drug combination presets */}
                 <div style={{marginBottom:12}}>
@@ -6891,7 +7124,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
                 {!formComplete?(
                   <div style={{fontSize:12,color:C.danger,marginBottom:10}}>
                     ⚠️ Required before saving:
-                    {!foundStudent?" · Select patient":""}{form.presentingConditions.length===0?" · Choose presenting condition":""}{!form.diagnosis.trim()?" · Enter diagnosis":""}{!form.treatmentPlan.trim()?" · Enter treatment plan":""}
+                    {!foundPatient?" · Select patient":""}{form.presentingConditions.length===0?" · Choose presenting condition":""}{!form.diagnosis.trim()?" · Enter diagnosis":""}{!form.treatmentPlan.trim()?" · Enter treatment plan":""}
                   </div>
                 ):(
                   <div style={{fontSize:12,color:C.success,marginBottom:10,fontWeight:600}}>✅ All required fields complete. Ready to save.</div>
@@ -6954,6 +7187,35 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
             <div style={{fontSize:11,color:C.textMuted,marginTop:6}}>{records.length} record{records.length!==1?"s":""} found</div>
           </div>
 
+          <div style={{...S.card,marginBottom:14,background:"#F5F3FB"}}>
+            <div style={S.cardTitle}>📁 Full Medical History Lookup</div>
+            <div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>Compile a patient's complete clinic history — ready to print, download or share for referrals.</div>
+            <select style={{...S.select,width:"100%"}} value={historySel} onChange={function(e){setHistorySel(e.target.value);}}>
+              <option value="">— Select a student or staff member —</option>
+              <optgroup label="Students">
+                {students.slice().sort(function(a,b){return (a.surname+a.firstname).localeCompare(b.surname+b.firstname);}).map(function(s){return <option key={"student:"+s.id} value={"student:"+s.id}>{s.surname} {s.firstname} — {s.class}{s.arm}</option>;})}
+              </optgroup>
+              <optgroup label="Staff">
+                {staff.slice().sort(function(a,b){return (a.surname+a.firstname).localeCompare(b.surname+b.firstname);}).map(function(s){return <option key={"staff:"+s.id} value={"staff:"+s.id}>{s.surname} {s.firstname} — {s.role||"Staff"}</option>;})}
+              </optgroup>
+            </select>
+            {historyPatient?(
+              <div style={{marginTop:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
+                  <div style={{fontSize:12,fontWeight:700}}>{historyRecords.length} visit{historyRecords.length!==1?"s":""} on record for {historyPatient.surname} {historyPatient.firstname}</div>
+                  <DocActionBar getHtml={function(){return buildMedicalHistoryHtml(historyPatient, historyType, historyRecords);}} filename={"Medical_History_"+historyPatient.surname+"_"+historyPatient.firstname} title={"Medical History — "+historyPatient.surname+" "+historyPatient.firstname}/>
+                </div>
+                {historyRecords.length===0?<div style={{color:C.textMuted,fontSize:12}}>No clinic visits recorded yet.</div>:(
+                  <div style={{maxHeight:240,overflowY:"auto"}}>
+                    {historyRecords.slice().reverse().map(function(r,i){
+                      return <div key={i} style={{fontSize:11,padding:"4px 0",borderBottom:"1px solid "+C.border}}>{formatDate(r.date)} — {r.presentingCondition} → {r.diagnosis}</div>;
+                    })}
+                  </div>
+                )}
+              </div>
+            ):null}
+          </div>
+
           {viewing?(
             <div style={S.card}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -6979,6 +7241,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
                 <div style={S.card}><div style={{fontSize:10,fontWeight:700,color:"#230E6A",marginBottom:4}}>DIAGNOSIS</div><div style={{fontSize:13,fontWeight:600}}>{viewing.diagnosis}</div></div>
               </div>
               {viewing.treatmentPlan?<div style={{...S.card,marginBottom:12}}><div style={{fontSize:10,fontWeight:700,color:"#059669",marginBottom:4}}>TREATMENT PLAN</div><div style={{fontSize:12,lineHeight:1.6,whiteSpace:"pre-line"}}>{viewing.treatmentPlan}</div></div>:null}
+              {viewing.emergencyProtocol?<div style={{...S.card,marginBottom:12,background:"#FEF2F2",border:"1px solid #B91C1C"}}><div style={{fontSize:10,fontWeight:700,color:"#B91C1C",marginBottom:4}}>⚠ EMERGENCY / ADMISSION PROTOCOL USED</div><div style={{fontSize:12,lineHeight:1.6,whiteSpace:"pre-line"}}>{viewing.emergencyProtocol}</div></div>:null}
               {viewing.medications&&viewing.medications.length>0?(
                 <div style={{...S.card,marginBottom:12}}>
                   <div style={{fontSize:10,fontWeight:700,color:"#6B491B",marginBottom:8}}>MEDICATIONS</div>
@@ -6998,7 +7261,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
               <div key={r.id} style={{...S.card,marginBottom:10,cursor:"pointer"}} onClick={function(){setViewing(r);}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
                   <div style={{flex:1}}>
-                    <div style={{...S.row,gap:8,marginBottom:4}}><span style={{fontSize:13,fontWeight:700,color:"#230E6A"}}>{r.studentName}</span><span style={S.badge("blue")}>{r.class}</span><span style={S.badge(r.disposition==="Returned to class"?"green":r.disposition==="Referred to hospital"?"red":"yellow")}>{r.disposition}</span></div>
+                    <div style={{...S.row,gap:8,marginBottom:4}}><span style={{fontSize:13,fontWeight:700,color:"#230E6A"}}>{r.studentName}</span>{r.patientType==="Staff"&&<span style={S.badge("gold")}>👤 Staff</span>}<span style={S.badge("blue")}>{r.class}</span><span style={S.badge(r.disposition==="Returned to class"?"green":r.disposition==="Referred to hospital"?"red":"yellow")}>{r.disposition}</span></div>
                     <div style={{fontSize:12,marginBottom:2}}><b>Presenting:</b> {r.presentingCondition}</div>
                     <div style={{fontSize:12}}><b>Diagnosis:</b> {r.diagnosis}</div>
                   </div>
@@ -7086,6 +7349,45 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
                 </div>
               );
             })}
+          </div>
+
+          {/* Drug Intake Report */}
+          <div style={{...S.card,marginTop:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
+              <div style={S.cardTitle}>💊 Drug Intake Report</div>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <select style={S.select} value={drugPeriod} onChange={function(e){setDrugPeriod(e.target.value);}}>
+                  <option value="day">Per Day</option>
+                  <option value="week">Per Week</option>
+                  <option value="month">Per Month</option>
+                  <option value="term">Per Term (current)</option>
+                </select>
+                {drugPeriod!=="term"&&<input style={S.input} type="date" value={drugRefDate} onChange={function(e){setDrugRefDate(e.target.value);}}/>}
+              </div>
+            </div>
+            <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
+              {drugPeriodLabel} · {drugStats.reduce(function(a,e){return a+e[1];},0)} total doses dispensed · {drugStats.length} distinct drugs
+            </div>
+            <div style={{marginBottom:10}}>
+              <TableActionBar
+                title={"Drug Intake Report - "+drugPeriodLabel}
+                columns={["Drug","Times Dispensed"]}
+                rows={drugStats.map(function(e){return [e[0],e[1]];})}
+                filename={"Drug_Intake_"+drugPeriod+"_"+(drugPeriod==="term"?CURRENT_TERM+"_"+CURRENT_SESSION:drugRefDate)}
+                onPrint={function(){
+                  var hdr = buildDocHeader(settings,"CLINIC DRUG INTAKE REPORT");
+                  var rowsHtml = drugStats.map(function(e){return '<tr><td>'+e[0]+'</td><td style="text-align:center;font-weight:700;">'+e[1]+'</td></tr>';}).join("");
+                  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Drug Intake Report</title><style>'+hdr.printStyles+'</style></head><body>'+hdr.headerHtml+
+                    '<div style="margin-bottom:10px;font-size:12px;"><b>Period:</b> '+drugPeriodLabel+'</div>'+
+                    '<table><tr><th>Drug</th><th>Times Dispensed</th></tr>'+(rowsHtml||'<tr><td colspan="2" style="text-align:center;">No medications dispensed in this period.</td></tr>')+'</table>'+hdr.footerHtml+'</body></html>';
+                  printHtmlDoc(html);
+                }}
+              />
+            </div>
+            {drugStats.length===0?<div style={{color:C.textMuted,fontSize:12,padding:12}}>No medications dispensed in this period.</div>:(
+              <table style={S.table}><thead><tr>{["Drug","Times Dispensed"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
+              <tbody>{drugStats.map(function(e,i){return <tr key={i}><td style={{...S.td,fontWeight:600}}>{e[0]}</td><td style={{...S.tdC,fontWeight:700,color:"#6B491B"}}>{e[1]}</td></tr>;})}</tbody></table>
+            )}
           </div>
         </div>
       ) : null}
