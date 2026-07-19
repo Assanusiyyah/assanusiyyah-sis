@@ -8514,7 +8514,7 @@ function ParentPortal({student, students, results, resultStats, attendance, fees
               {[
                 {l:"Average",v:avgScore+"%",bg:"#EFF6FF"},{l:"Highest",v:highest+"%",bg:"#F0FDF4"},
                 {l:"Lowest",v:lowest+"%",bg:"#FEF2F2"},{l:"Passed",v:passed+"/"+termResults.length,bg:"#F5F3FB"},
-                ...((resultStats&&resultStats[selSess+"|"+selTerm]&&resultStats[selSess+"|"+selTerm].position)?[{l:"Position in Class",v:ordinalSuffix(resultStats[selSess+"|"+selTerm].position)+" of "+resultStats[selSess+"|"+selTerm].classSize,bg:"#FFFBEB"}]:[]),
+                ...((rc.showPosition&&resultStats&&resultStats[selSess+"|"+selTerm]&&resultStats[selSess+"|"+selTerm].position)?[{l:"Position in Class",v:ordinalSuffix(resultStats[selSess+"|"+selTerm].position)+" of "+resultStats[selSess+"|"+selTerm].classSize,bg:"#FFFBEB"}]:[]),
               ].map(function(s,i){return(
                 <div key={i} style={S.statCard(s.bg)}><div style={S.statNum}>{s.v}</div><div style={S.statLabel}>{s.l}</div></div>
               );})}
