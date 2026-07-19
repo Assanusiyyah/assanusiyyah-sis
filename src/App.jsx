@@ -584,6 +584,12 @@ const SEED_SETTINGS = {
   extraSubjects: [],
   resultConfig: DEFAULT_RESULT_CONFIG,
   resultsPublished: {},
+  feeStructure: {},
+  schoolRules: "",
+  hostelRules: "",
+  generalInfo: "",
+  medicalRequirements: "",
+  hostelRequiredItems: [],
 };
 
 // Merges a possibly-stale/partial settings.resultConfig with defaults so old
@@ -611,6 +617,57 @@ function getGrade(score, settings){
   var sorted = scale.slice().sort(function(a,b){ return b.min-a.min; });
   for(var i=0;i<sorted.length;i++){ if(score>=sorted[i].min) return sorted[i]; }
   return sorted[sorted.length-1] || {grade:"F9",remark:"Fail",band:"F"};
+}
+
+// Drafts a report-card comment from the student's own result data (average,
+// grade band, class position, weak subjects). Root-only "Auto-generate"
+// buttons fill the textarea with this text; the reviewer can still edit
+// before saving — it's a drafting aid, not a forced value.
+function generateComment(kind, ctx){
+  var avg = ctx.avg;
+  var band = ctx.band||"F";
+  var pos = ctx.position;
+  var classSize = ctx.classSize;
+  var weak = ctx.weakSubjects||[];
+  var posText = (pos&&classSize) ? " (ranked "+ordinalSuffix(pos)+" out of "+classSize+")" : "";
+  var name = ctx.studentFirstName||"The student";
+  var weakText = weak.length ? " especially in "+weak.join(", ") : "";
+
+  var templates = {
+    A: {
+      teacher: name+" has performed excellently this term"+posText+", with an average of "+avg+"%. Keep up the outstanding work and continue to challenge yourself.",
+      principal: "An excellent result. "+name+" is commended for this outstanding performance and encouraged to sustain it."
+    },
+    B: {
+      teacher: name+" recorded a very good result this term"+posText+", with an average of "+avg+"%. With a little more consistency, even better results are within reach.",
+      principal: "A very good result. Keep up the good work and aim higher next term."
+    },
+    C: {
+      teacher: name+" had a good result this term"+posText+" (average "+avg+"%), but there is clear room for improvement"+weakText+".",
+      principal: "A good result overall. More effort is required to reach the top of the class."
+    },
+    D: {
+      teacher: name+" managed a fair, passing result this term"+posText+" (average "+avg+"%)."+(weak.length?" More attention is needed in "+weak.join(", ")+".":" More commitment to studies is needed."),
+      principal: "A fair result. Greater commitment to studies is required going forward."
+    },
+    E: {
+      teacher: name+"'s result this term"+posText+" is just at the pass mark (average "+avg+"%)."+(weak.length?" Extra practice is strongly recommended in "+weak.join(", ")+".":" Extra practice and closer monitoring at home are strongly recommended."),
+      principal: "A borderline result. Closer monitoring and extra lessons are recommended."
+    },
+    F: {
+      teacher: name+"'s result this term"+posText+" (average "+avg+"%) requires urgent attention."+(weak.length?" Please arrange extra lessons focused on "+weak.join(", ")+".":" Please arrange extra lessons and closer supervision immediately."),
+      principal: "This result requires urgent attention. Parents/guardians are advised to meet with the school without delay."
+    }
+  };
+  var t = templates[band] || templates.F;
+  if(kind==="principal") return t.principal;
+  return t.teacher; // teacher & form master comments share the same performance-driven tone
+}
+function ordinalSuffix(n){
+  if(!n) return n;
+  var s=["th","st","nd","rd"];
+  var v=n%100;
+  return n+(s[(v-20)%10]||s[v]||s[0]);
 }
 // ══════════════════════════════════════════════════════
 // ALL PAGES & THEIR REQUIRED PERMISSIONS
@@ -2321,6 +2378,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
   var _daysOpened = useState(""); var daysOpened = _daysOpened[0]; var setDaysOpened = _daysOpened[1];
   var _showRemedial = useState(false); var showRemedial = _showRemedial[0]; var setShowRemedial = _showRemedial[1];
   var _remedialAsnId = useState(""); var remedialAsnId = _remedialAsnId[0]; var setRemedialAsnId = _remedialAsnId[1];
+  var _remarkRegen = useState(0); var remarkRegen = _remarkRegen[0]; var setRemarkRegen = _remarkRegen[1];
 
   var isAdmin = currentUser.role==="root"||currentUser.role==="admin"||currentUser.role==="Admin";
   var ARMS = ["A","B","C","D","E"];
@@ -2965,24 +3023,33 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
         {(function(){
           var cr = getClassRemark(selClass, selArm);
           var canTeacher = isClassTeacherOf(selClass);
+          var classAvgs = classStudents.map(function(s){var st=getStudentStats(s.id);return st?st.avg:null;}).filter(function(v){return v!==null;});
+          var classAvg = classAvgs.length ? parseFloat((classAvgs.reduce(function(a,b){return a+b;},0)/classAvgs.length).toFixed(2)) : null;
+          var classCtx = classAvg!==null ? {avg:classAvg, band:getGrade(classAvg,settings).band, studentFirstName:"The class"} : null;
           return(
             <div style={{...S.card,marginBottom:14}}>
               <div style={S.cardTitle}>General Remark for {selClass}{selArm} — {selTerm} {selSess}</div>
               <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>A class-wide remark (not about any one student) that prints on every report card for this class.</div>
               <div style={S.grid2}>
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Class Teacher's General Remark</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <div style={{fontSize:11,fontWeight:700}}>Class Teacher's General Remark</div>
+                    {canTeacher&&classCtx&&<button type="button" onClick={function(){setClassRemarkField("teacherRemark", generateComment("teacher",classCtx));setRemarkRegen(function(n){return n+1;});}} style={{fontSize:8,padding:"1px 6px",border:"1px solid #8B0000",borderRadius:3,background:"#fff",color:"#8B0000",cursor:"pointer"}}>✨ Auto-generate</button>}
+                  </div>
                   {canTeacher?(
-                    <textarea style={{...S.textarea,minHeight:60}} defaultValue={cr.teacherRemark} key={selClass+selArm+selSess+selTerm+"_t"}
+                    <textarea style={{...S.textarea,minHeight:60}} defaultValue={cr.teacherRemark} key={selClass+selArm+selSess+selTerm+"_t_"+remarkRegen}
                       onBlur={function(e){ if(e.target.value!==cr.teacherRemark) setClassRemarkField("teacherRemark", e.target.value); }}/>
                   ):(
                     <div style={{...S.textarea,minHeight:60,background:"#F9FAFB",color:cr.teacherRemark?C.text:C.textMuted}}>{cr.teacherRemark||"— no permission to edit —"}</div>
                   )}
                 </div>
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Principal's General Remark</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <div style={{fontSize:11,fontWeight:700}}>Principal's General Remark</div>
+                    {isPrincipal&&classCtx&&<button type="button" onClick={function(){setClassRemarkField("principalRemark", generateComment("principal",classCtx));setRemarkRegen(function(n){return n+1;});}} style={{fontSize:8,padding:"1px 6px",border:"1px solid #8B0000",borderRadius:3,background:"#fff",color:"#8B0000",cursor:"pointer"}}>✨ Auto-generate</button>}
+                  </div>
                   {isPrincipal?(
-                    <textarea style={{...S.textarea,minHeight:60}} defaultValue={cr.principalRemark} key={selClass+selArm+selSess+selTerm+"_p"}
+                    <textarea style={{...S.textarea,minHeight:60}} defaultValue={cr.principalRemark} key={selClass+selArm+selSess+selTerm+"_p_"+remarkRegen}
                       onBlur={function(e){ if(e.target.value!==cr.principalRemark) setClassRemarkField("principalRemark", e.target.value); }}/>
                   ):(
                     <div style={{...S.textarea,minHeight:60,background:"#F9FAFB",color:cr.principalRemark?C.text:C.textMuted}}>{cr.principalRemark||"— no permission to edit —"}</div>
@@ -3227,20 +3294,34 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
 
           {/* Comments */}
           {rc.showComments&&<div style={{marginBottom:8}}>
-            {[["teacherComment","Class Teacher's comment:",isClassTeacherOf(stu.class)],["formMasterComment","Form Master's report:",isClassTeacherOf(stu.class)],["principalComment","Principal's report:",isPrincipal]].map(function(trip){
-              var field=trip[0], label=trip[1], canEdit=trip[2];
-              return(
-                <div key={field} style={{marginBottom:4}}>
-                  <div style={{fontSize:9,fontWeight:700}}>{label}</div>
-                  {canEdit?(
-                    <textarea value={meta[field]||""} onChange={function(e){setComment(stu.id,field,e.target.value);}}
-                      style={{width:"100%",border:"1px solid #ccc",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,resize:"vertical",fontFamily:"Arial"}}/>
-                  ):(
-                    <div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB",color:meta[field]?C.text:C.textMuted}}>{meta[field]||"— no permission to edit this field —"}</div>
-                  )}
-                </div>
-              );
-            })}
+            {(function(){
+              var weakSubjects = stuResults.filter(function(r){return (r.total||0)<rc.passMark;}).map(function(r){return r.subject;});
+              var commentCtx = {
+                avg: stats?stats.avg:0,
+                band: getGrade(stats?stats.avg:0, settings).band,
+                position: stats?stats.position:null,
+                classSize: classStudents.length,
+                weakSubjects: weakSubjects,
+                studentFirstName: stu.firstname
+              };
+              return [["teacherComment","Class Teacher's comment:",isClassTeacherOf(stu.class),"teacher"],["formMasterComment","Form Master's report:",isClassTeacherOf(stu.class),"teacher"],["principalComment","Principal's report:",isPrincipal,"principal"]].map(function(trip){
+                var field=trip[0], label=trip[1], canEdit=trip[2], kind=trip[3];
+                return(
+                  <div key={field} style={{marginBottom:4}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div style={{fontSize:9,fontWeight:700}}>{label}</div>
+                      {canEdit&&stats&&<button type="button" onClick={function(){setComment(stu.id,field,generateComment(kind,commentCtx));}} style={{fontSize:8,padding:"1px 6px",border:"1px solid #8B0000",borderRadius:3,background:"#fff",color:"#8B0000",cursor:"pointer"}}>✨ Auto-generate</button>}
+                    </div>
+                    {canEdit?(
+                      <textarea value={meta[field]||""} onChange={function(e){setComment(stu.id,field,e.target.value);}}
+                        style={{width:"100%",border:"1px solid #ccc",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,resize:"vertical",fontFamily:"Arial"}}/>
+                    ):(
+                      <div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB",color:meta[field]?C.text:C.textMuted}}>{meta[field]||"— no permission to edit this field —"}</div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
             {classRemark.teacherRemark&&<div style={{marginBottom:4}}><div style={{fontSize:9,fontWeight:700}}>Class Teacher's General Remark (whole class):</div><div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB"}}>{classRemark.teacherRemark}</div></div>}
             {classRemark.principalRemark&&<div style={{marginBottom:4}}><div style={{fontSize:9,fontWeight:700}}>Principal's General Remark (whole class):</div><div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB"}}>{classRemark.principalRemark}</div></div>}
           </div>}
@@ -3261,16 +3342,82 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
     );
   }
 
+  function renderEntryStatus(){
+    function subjectTeachers(cls, sub){
+      return staff.filter(function(t){
+        return t.active && (t.subjects||[]).includes(sub) && (t.classes||[]).includes(cls);
+      });
+    }
+    var rowsData = [];
+    CLASSES.forEach(function(cls){
+      var clsStudents = students.filter(function(s){return s.active && s.class===cls;});
+      var clsSubjects = getSubjects(cls);
+      clsSubjects.forEach(function(sub){
+        var clsResults = results.filter(function(r){return r.class===cls && r.subject===sub && r.term===selTerm && r.session===selSess;});
+        var enteredCount = clsStudents.filter(function(s){
+          var r = clsResults.find(function(x){return x.studentId===s.id;});
+          return r && (r.total||r.total===0);
+        }).length;
+        var complete = clsStudents.length>0 && enteredCount===clsStudents.length;
+        var teachers = subjectTeachers(cls, sub);
+        rowsData.push({
+          cls: cls, subject: sub, entered: enteredCount, total: clsStudents.length,
+          complete: complete, teachers: teachers.map(function(t){return t.surname+" "+t.firstname;}).join(", ")||"Unassigned"
+        });
+      });
+    });
+    var pending = rowsData.filter(function(r){return !r.complete && r.total>0;});
+    var complete = rowsData.filter(function(r){return r.complete;});
+    return(
+      <div>
+        <div style={{...S.card,marginBottom:14,background:"#FFFBEB",border:"1px solid #F0C060"}}>
+          <div style={{fontSize:12,color:"#92400E"}}>🔑 Root/Admin only. Shows which teacher has (or hasn't) entered scores for each class/subject in {selTerm} {selSess}. "Entered" requires a score for every active student in that class.</div>
+        </div>
+        <div style={{...S.statsGrid,marginBottom:14}}>
+          <div style={S.statCard("#F0FDF4")}><div style={S.statNum}>{complete.length}</div><div style={S.statLabel}>Entered</div></div>
+          <div style={S.statCard("#FEF2F2")}><div style={S.statNum}>{pending.length}</div><div style={S.statLabel}>Pending</div></div>
+        </div>
+        <div style={{...S.card,overflowX:"auto"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={S.cardTitle}>Score Entry Status — {selTerm} {selSess}</div>
+            <TableActionBar
+              title={"Score Entry Status - "+selTerm+" "+selSess}
+              columns={["Class","Subject","Teacher(s)","Entered","Status"]}
+              rows={rowsData.map(function(r){return [r.cls, r.subject, r.teachers, r.entered+"/"+r.total, r.complete?"Entered":r.total===0?"N/A (no students)":"Pending"];})}
+            />
+          </div>
+          <table style={S.table}>
+            <thead><tr>{["Class","Subject","Teacher(s)","Entered","Status"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
+            <tbody>
+              {rowsData.map(function(r,i){
+                return(
+                  <tr key={i}>
+                    <td style={{...S.td,fontWeight:600}}>{r.cls}</td>
+                    <td style={S.td}>{r.subject}</td>
+                    <td style={S.td}>{r.teachers}</td>
+                    <td style={S.tdC}>{r.entered}/{r.total}</td>
+                    <td style={S.tdC}>{r.total===0?<span style={S.badge("secondary")}>N/A</span>:r.complete?<span style={S.badge("green")}>✅ Entered</span>:<span style={S.badge("red")}>⏳ Pending</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   return(
     <div>
       <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:"2px solid "+C.border,flexWrap:"wrap"}}>
-        {[["entry","✏️ Score Entry"],["broadsheet","📊 Broadsheet"],["card","📋 Report Card"]].map(function(pair){
+        {[["entry","✏️ Score Entry"],["broadsheet","📊 Broadsheet"],["card","📋 Report Card"]].concat(isAdmin?[["entrystatus","📋 Entry Status"]]:[]).map(function(pair){
           return <button key={pair[0]} onClick={function(){setTab(pair[0]);}} style={{...S.btn(tab===pair[0]?"primary":"secondary"),borderRadius:"6px 6px 0 0",marginBottom:-2,fontSize:11,padding:"6px 14px"}}>{pair[1]}</button>;
         })}
       </div>
       {tab==="entry" ? renderEntry() : null}
       {tab==="broadsheet" ? renderBroadsheet() : null}
       {tab==="card" ? renderCard() : null}
+      {tab==="entrystatus" && isAdmin ? renderEntryStatus() : null}
 
       {/* Assign remedial work to below-pass-mark students */}
       {(function(){
@@ -4266,6 +4413,25 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
   const isRoot=currentUser?.role==="root";
   const [rcForm,setRcForm]=useState(getResultConfig(settings));
   useEffect(function(){ if(tab==="resultconfig") setRcForm(getResultConfig(settings)); },[tab]);
+  const [admForm,setAdmForm]=useState({
+    feeStructure: settings.feeStructure||{},
+    schoolRules: settings.schoolRules||"",
+    hostelRules: settings.hostelRules||"",
+    generalInfo: settings.generalInfo||"",
+    medicalRequirements: settings.medicalRequirements||"",
+    hostelRequiredItems: (settings.hostelRequiredItems||[]).join("\n"),
+  });
+  useEffect(function(){
+    if(tab==="admissionsconfig") setAdmForm({
+      feeStructure: settings.feeStructure||{},
+      schoolRules: settings.schoolRules||"",
+      hostelRules: settings.hostelRules||"",
+      generalInfo: settings.generalInfo||"",
+      medicalRequirements: settings.medicalRequirements||"",
+      hostelRequiredItems: (settings.hostelRequiredItems||[]).join("\n"),
+    });
+  },[tab]);
+  const admConfigClasses = CLASSES.concat(settings.extraClasses||[]);
 
   // Admin accounts now live only behind the authenticated /api/admin endpoint —
   // never in settings, never in the generic /api/db proxy (see admin.js).
@@ -4316,7 +4482,7 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
       </div>
     </div>
 
-    <Tabs tabs={[["general","General"],["admins","Admin Accounts"],["calendar","Calendar"],["classes","Classes & Subjects"],...(isRoot?[["resultconfig","Result Sheet Config"]]:[])]} active={tab} onChange={setTab}/>
+    <Tabs tabs={[["general","General"],["admins","Admin Accounts"],["calendar","Calendar"],["classes","Classes & Subjects"],...(isRoot?[["resultconfig","Result Sheet Config"],["admissionsconfig","Admissions & Documents"]]:[])]} active={tab} onChange={setTab}/>
 
     {tab==="general"&&<div>
       <div style={S.grid2}>
@@ -4787,6 +4953,67 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
 
       <button style={S.btn()} onClick={function(){setSettingsSafe(function(p){return {...p,resultConfig:rcForm};});alert("Result sheet configuration saved.");}}>💾 Save Result Sheet Configuration</button>
     </div>}
+
+    {isRoot&&tab==="admissionsconfig"&&<div>
+      <div style={{...S.card,marginBottom:14,background:"#FFFBEB",border:"1px solid #F0C060"}}>
+        <div style={{fontSize:12,color:"#92400E"}}>🔑 Root-only. This content is shown to prospective candidates on their portal once their application is approved (admission letter, school bill, rules, hostel materials, general info).</div>
+      </div>
+
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={S.cardTitle}>Fee Structure (per class, per session)</div>
+        <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>All-in figure shown to an approved candidate as their expected school bill. Does not affect Fees module records, which are still entered per student.</div>
+        <table style={S.table}>
+          <thead><tr><th style={S.th}>Class</th><th style={S.th}>Day (₦)</th><th style={S.th}>Boarder (₦)</th></tr></thead>
+          <tbody>
+            {admConfigClasses.map(function(cls){
+              var row = admForm.feeStructure[cls]||{Day:0,Boarder:0};
+              return(
+                <tr key={cls}>
+                  <td style={{...S.td,fontWeight:700}}>{cls}</td>
+                  <td style={S.td}><input type="number" style={{...S.input,width:110}} value={row.Day||0} onChange={function(e){var v=parseInt(e.target.value)||0;setAdmForm(function(p){return {...p,feeStructure:{...p.feeStructure,[cls]:{...(p.feeStructure[cls]||{}),Day:v}}};});}}/></td>
+                  <td style={S.td}><input type="number" style={{...S.input,width:110}} value={row.Boarder||0} onChange={function(e){var v=parseInt(e.target.value)||0;setAdmForm(function(p){return {...p,feeStructure:{...p.feeStructure,[cls]:{...(p.feeStructure[cls]||{}),Boarder:v}}};});}}/></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={S.grid2}>
+        <div style={S.card}>
+          <div style={S.cardTitle}>School Rules & Regulations</div>
+          <textarea style={{...S.input,minHeight:140}} value={admForm.schoolRules} onChange={e=>setAdmForm(p=>({...p,schoolRules:e.target.value}))} placeholder="One rule per line..."/>
+        </div>
+        <div style={S.card}>
+          <div style={S.cardTitle}>Hostel Rules & Regulations</div>
+          <textarea style={{...S.input,minHeight:140}} value={admForm.hostelRules} onChange={e=>setAdmForm(p=>({...p,hostelRules:e.target.value}))} placeholder="One rule per line..."/>
+        </div>
+        <div style={S.card}>
+          <div style={S.cardTitle}>Medical Requirements for Admission</div>
+          <textarea style={{...S.input,minHeight:120}} value={admForm.medicalRequirements} onChange={e=>setAdmForm(p=>({...p,medicalRequirements:e.target.value}))} placeholder="e.g. immunization record, fitness certificate, genotype/blood group report..."/>
+        </div>
+        <div style={S.card}>
+          <div style={S.cardTitle}>Hostel Required Materials (boarders)</div>
+          <textarea style={{...S.input,minHeight:120}} value={admForm.hostelRequiredItems} onChange={e=>setAdmForm(p=>({...p,hostelRequiredItems:e.target.value}))} placeholder="One item per line, e.g.&#10;Bucket & mug&#10;Beddings (mattress, sheets)&#10;Toiletries"/>
+        </div>
+        <div style={{...S.card,gridColumn:"1 / -1"}}>
+          <div style={S.cardTitle}>General Info for New Candidates</div>
+          <textarea style={{...S.input,minHeight:120}} value={admForm.generalInfo} onChange={e=>setAdmForm(p=>({...p,generalInfo:e.target.value}))} placeholder="Resumption date, contact info, what to expect on resumption day..."/>
+        </div>
+      </div>
+
+      <button style={S.btn()} onClick={function(){
+        setSettingsSafe(function(p){return {...p,
+          feeStructure: admForm.feeStructure,
+          schoolRules: admForm.schoolRules,
+          hostelRules: admForm.hostelRules,
+          generalInfo: admForm.generalInfo,
+          medicalRequirements: admForm.medicalRequirements,
+          hostelRequiredItems: admForm.hostelRequiredItems.split("\n").map(function(s){return s.trim();}).filter(Boolean),
+        };});
+        alert("Admissions & documents configuration saved.");
+      }}>💾 Save Admissions & Documents Configuration</button>
+    </div>}
   </div>);
 }
 
@@ -5217,8 +5444,32 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
   </div>);
 }
 
-function StudentPortalModule({students, staff, lessons, assignments, submissions, setSubmissions, results, setResults, currentUser}){
+function StudentPortalModule({students, staff, lessons, assignments, submissions, setSubmissions, results, setResults, currentUser, settings, elibrary}){
   const [tab, setTab] = useState("lessons");
+  const rc = getResultConfig(settings||{});
+
+  function recommendedResources(subject){
+    return (elibrary||[]).filter(function(r){return r.subject===subject;}).slice(0,3);
+  }
+  function isBelowPassMark(score, maxScore){
+    return maxScore ? (score/maxScore*100) < rc.passMark : false;
+  }
+  function ScoreNudge({subject, score, maxScore}){
+    if(!isBelowPassMark(score, maxScore)) return null;
+    var res = recommendedResources(subject);
+    return (
+      <div style={{marginTop:8,background:"#FEF3C7",border:"1px solid #F59E0B",borderRadius:8,padding:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#92400E",marginBottom:4}}>📚 Recommended for you — below pass mark ({rc.passMark}%)</div>
+        {res.length ? (
+          <ul style={{margin:0,paddingLeft:16}}>
+            {res.map(function(r){return <li key={r.id} style={{fontSize:11,marginBottom:2}}><a href={r.url||r.file||"#"} target="_blank" rel="noreferrer" style={{color:"#1D4ED8"}}>{r.title}</a></li>;})}
+          </ul>
+        ) : (
+          <div style={{fontSize:11,color:"#92400E"}}>Please see your subject teacher for extra practice on this topic.</div>
+        )}
+      </div>
+    );
+  }
 
   const isTeacherOrAdmin = currentUser.role==="root"||currentUser.role==="Admin"||currentUser.role==="Teacher";
   const myStaff = staff.find(s=>(s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
@@ -5433,7 +5684,7 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
               </div>
               <div style={{textAlign:"right",flexShrink:0}}>
                 {isTeacherOrAdmin&&<span style={S.badge("blue")}>{allSubs.length} submission{allSubs.length!==1?"s":""}</span>}
-                {sub&&<div style={{marginTop:4}}><span style={S.badge(sub.marked?"green":"yellow")}>{sub.marked?"Marked":"Submitted"}</span>{sub.marked&&<div style={{fontWeight:700,fontSize:13,color:C.success,marginTop:4}}>{sub.score}/{asn.maxScore}</div>}</div>}
+                {sub&&<div style={{marginTop:4}}><span style={S.badge(sub.marked?"green":"yellow")}>{sub.marked?"Marked":"Submitted"}</span>{sub.marked&&<div style={{fontWeight:700,fontSize:13,color:isBelowPassMark(sub.score,asn.maxScore)?C.danger:C.success,marginTop:4}}>{sub.score}/{asn.maxScore}</div>}</div>}
               </div>
             </div>
 
@@ -5463,8 +5714,9 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
                 </div>
                 <div style={{fontSize:12,color:C.text,lineHeight:1.6,marginBottom:sub.marked?8:0}}>{sub.content}</div>
                 {sub.marked&&<>
-                  <div style={{fontWeight:700,fontSize:14,color:C.success}}>Score: {sub.score}/{asn.maxScore}</div>
+                  <div style={{fontWeight:700,fontSize:14,color:isBelowPassMark(sub.score,asn.maxScore)?C.danger:C.success}}>Score: {sub.score}/{asn.maxScore}</div>
                   {sub.feedback&&<div style={{fontSize:12,color:C.primaryDark,marginTop:6,fontStyle:"italic"}}>Teacher's comment: "{sub.feedback}"</div>}
+                  <ScoreNudge subject={asn.subject} score={sub.score} maxScore={asn.maxScore}/>
                 </>}
               </div>
             )}
@@ -5562,7 +5814,7 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
 
     {/* ── MY SCORES TAB (student only) ── */}
     {tab==="myscores"&&myStudent&&<div>
-      <div style={S.card}>
+      <div style={{...S.card,overflowX:"auto"}}>
         <div style={S.cardTitle}>My Assignment Scores — {CURRENT_TERM} {CURRENT_SESSION}</div>
         {getStudentAssignmentScores(myStudent.id).length===0?(
           <div style={{textAlign:"center",color:C.textMuted,padding:28}}>No marked assignments yet this term.</div>
@@ -7901,6 +8153,30 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
 
   var logo = settings.schoolLogo || "";
   var rc = getResultConfig(settings);
+  var isMobile = useIsMobile();
+
+  function isBelowPassMark(score, maxScore){
+    return maxScore ? (score/maxScore*100) < rc.passMark : false;
+  }
+  function recommendedResources(subject){
+    return (elibrary||[]).filter(function(r){return r.subject===subject;}).slice(0,3);
+  }
+  function ScoreNudge({subject, score, maxScore}){
+    if(!isBelowPassMark(score, maxScore)) return null;
+    var res = recommendedResources(subject);
+    return (
+      <div style={{marginTop:8,background:"#FEF3C7",border:"1px solid #F59E0B",borderRadius:8,padding:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#92400E",marginBottom:4}}>📚 Recommended — below pass mark ({rc.passMark}%)</div>
+        {res.length ? (
+          <ul style={{margin:0,paddingLeft:16}}>
+            {res.map(function(r){return <li key={r.id} style={{fontSize:11,marginBottom:2}}><a href={r.url||r.file||"#"} target="_blank" rel="noreferrer" style={{color:"#1D4ED8"}}>{r.title}</a></li>;})}
+          </ul>
+        ) : (
+          <div style={{fontSize:11,color:"#92400E"}}>Below pass mark — please encourage extra practice on this topic with your child's teacher.</div>
+        )}
+      </div>
+    );
+  }
 
   function submitAssignmentAnswer(assignmentId){
     if(!submissionText.trim()) return alert("Please write an answer before submitting.");
@@ -8164,7 +8440,7 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
               );})}
             </div>
 
-            <div style={S.card}>
+            <div style={{...S.card,overflowX:"auto"}}>
               <div style={S.cardTitle}>{selTerm} {selSess} — Subject Results</div>
               <table style={S.table}>
                 <thead><tr>{["Subject","CA1","CA2","Exam","Total","Grade","Remark"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
@@ -8296,7 +8572,7 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
         {termFees.length===0 ? (
           <div style={{...S.card,textAlign:"center",color:C.textMuted,padding:32}}>No fee records for {selTerm} {selSess} yet.</div>
         ) : (
-          <div style={S.card}>
+          <div style={{...S.card,overflowX:"auto"}}>
             <div style={S.cardTitle}>Payment History</div>
             <table style={S.table}>
               <thead><tr>{["Date","Description","Amount","Paid","Balance","Status"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
@@ -8462,8 +8738,9 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
                   <div style={{fontSize:11,fontWeight:700,color:sub.marked?"#059669":"#D97706",marginBottom:6}}>{sub.marked?"✓ Marked":"⏳ Submitted — Awaiting Marking"}</div>
                   <div style={{fontSize:12,color:C.text,lineHeight:1.6,marginBottom:sub.marked?8:0}}>{sub.content}</div>
                   {sub.marked&&<>
-                    <div style={{fontWeight:700,fontSize:14,color:"#059669"}}>Score: {sub.score}/{asn.maxScore}</div>
+                    <div style={{fontWeight:700,fontSize:14,color:isBelowPassMark(sub.score,asn.maxScore)?"#DC2626":"#059669"}}>Score: {sub.score}/{asn.maxScore}</div>
                     {sub.feedback&&<div style={{fontSize:12,color:"#230E6A",marginTop:6,fontStyle:"italic"}}>Teacher's comment: "{sub.feedback}"</div>}
+                    <ScoreNudge subject={asn.subject} score={sub.score} maxScore={asn.maxScore}/>
                   </>}
                 </div>
               ):open?(
@@ -8631,26 +8908,26 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
   return(
     <div style={{minHeight:"100vh",background:"#F9FAFB",fontFamily:"'Segoe UI',sans-serif"}}>
       {/* Top bar */}
-      <div style={{background:"linear-gradient(90deg,#230E6A,#3D2496)",padding:"0 20px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56,position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          {logo ? <img src={logo} alt="" style={{width:32,height:32,objectFit:"contain"}}/> : null}
-          <div>
-            <div style={{fontSize:12,fontWeight:800,color:"#F0C060"}}>{SCHOOL_NAME}</div>
-            <div style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>Parent Portal</div>
+      <div style={{background:"linear-gradient(90deg,#230E6A,#3D2496)",padding:isMobile?"0 10px":"0 20px",display:"flex",alignItems:"center",justifyContent:"space-between",height:isMobile?48:56,position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:isMobile?6:10,minWidth:0}}>
+          {logo ? <img src={logo} alt="" style={{width:isMobile?26:32,height:isMobile?26:32,objectFit:"contain",flexShrink:0}}/> : null}
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:isMobile?11:12,fontWeight:800,color:"#F0C060",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{SCHOOL_NAME}</div>
+            <div style={{fontSize:isMobile?9:10,color:"rgba(255,255,255,0.6)"}}>Parent Portal</div>
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.8)"}}>👋 {student.parentName||"Parent"}</span>
-          {!activeAttempt&&<button onClick={onLogout} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:6,color:"#fff",padding:"4px 12px",cursor:"pointer",fontSize:11}}>Logout</button>}
+        <div style={{display:"flex",alignItems:"center",gap:isMobile?8:12,flexShrink:0}}>
+          {!isMobile&&<span style={{fontSize:11,color:"rgba(255,255,255,0.8)"}}>👋 {student.parentName||"Parent"}</span>}
+          {!activeAttempt&&<button onClick={onLogout} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:6,color:"#fff",padding:isMobile?"4px 8px":"4px 12px",cursor:"pointer",fontSize:11}}>Logout</button>}
         </div>
       </div>
 
       {/* Tab navigation — hidden during an active CBT attempt so the timer can't be dodged by navigating away */}
-      {!activeAttempt&&<div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"0 20px",display:"flex",gap:0,overflowX:"auto"}}>
+      {!activeAttempt&&<div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:isMobile?"0 10px":"0 20px",display:"flex",gap:0,overflowX:"auto"}}>
         {NAV_TABS.map(function(pair){
           var id=pair[0]; var label=pair[1];
           return(
-            <button key={id} onClick={function(){setTab(id);}} style={{background:"none",border:"none",borderBottom:tab===id?"3px solid #230E6A":"3px solid transparent",color:tab===id?"#230E6A":"#6B7280",fontWeight:tab===id?700:400,padding:"14px 16px",cursor:"pointer",fontSize:12,whiteSpace:"nowrap",fontFamily:"inherit"}}>
+            <button key={id} onClick={function(){setTab(id);}} style={{background:"none",border:"none",borderBottom:tab===id?"3px solid #230E6A":"3px solid transparent",color:tab===id?"#230E6A":"#6B7280",fontWeight:tab===id?700:400,padding:isMobile?"12px 10px":"14px 16px",cursor:"pointer",fontSize:isMobile?11:12,whiteSpace:"nowrap",fontFamily:"inherit"}}>
               {label}
             </button>
           );
@@ -8658,7 +8935,7 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
       </div>}
 
       {/* Content */}
-      <div style={{maxWidth:900,margin:"0 auto",padding:"20px 16px"}}>
+      <div style={{maxWidth:900,margin:"0 auto",padding:isMobile?"14px 10px":"20px 16px"}}>
         {tab==="home" ? renderHome() : null}
         {tab==="results" ? renderResults() : null}
         {tab==="attendance" ? renderAttendance() : null}
@@ -10083,17 +10360,19 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
 
     // SMS parent
     if(app&&app.parentPhone){
-      var msg = status==="Approved"
-        ? "Dear "+app.parentName+", we are pleased to inform you that "+app.firstname+" "+app.surname+"'s application (Ref: "+app.refNo+") has been APPROVED. Please visit the school to complete enrolment. — "+SCHOOL_NAME
-        : status==="Rejected"
+      var msg = status==="Rejected"
         ? "Dear "+app.parentName+", we regret to inform you that "+app.firstname+" "+app.surname+"'s application (Ref: "+app.refNo+") was not successful at this time. "+((remarks||"")?remarks+" ":"")+"Thank you for your interest. — "+SCHOOL_NAME
         : "Dear "+app.parentName+", the application for "+app.firstname+" (Ref: "+app.refNo+") status has been updated to: "+status+". — "+SCHOOL_NAME;
       sendSMS(app.parentPhone, msg, "Admission Update");
     }
   }
 
-  function enrollFromApplication(app){
-    if(!window.confirm("Convert this application into a full student record?")) return;
+  // Approving an application immediately creates the student record — no
+  // separate manual "Enrol Student" step — so the candidate's info shows up
+  // in the Students list/Parent Portal right away, per school request.
+  function approveAndEnroll(appId, remarks){
+    var app = applications.find(function(a){return a.id===appId;});
+    if(!app) return;
     var yr = app.entrySession.split("/")[0];
     var newStu = {
       id:genId(),
@@ -10110,8 +10389,17 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
       phone:"", nationality:app.nationality, stateOfOrigin:app.stateOfOrigin
     };
     setStudents(function(p){return[...p,newStu];});
-    updateStatus(app.id,"Enrolled","Enrolled as "+newStu.admissionNo);
-    alert("Student enrolled successfully! Admission No: "+newStu.admissionNo);
+    setApplications(function(p){return p.map(function(a){
+      if(a.id!==appId) return a;
+      return {...a, status:"Approved", reviewedBy:currentUser.name, reviewedAt:today(), remarks:remarks||a.remarks, enrolledStudentId:newStu.id, admissionNo:newStu.admissionNo};
+    });});
+    if(app.parentPhone){
+      sendSMS(app.parentPhone,
+        "Dear "+app.parentName+", we are pleased to inform you that "+app.firstname+" "+app.surname+"'s application (Ref: "+app.refNo+") has been APPROVED. Admission Number: "+newStu.admissionNo+". You can now log in to the Parent Portal with this admission number and your phone number. — "+SCHOOL_NAME,
+        "Admission Update"
+      );
+    }
+    return newStu;
   }
 
   var filtered = applications.filter(function(a){
@@ -10130,19 +10418,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
 
   // ── Print admission letter ────────────────────────────
   function printAdmissionLetter(app){
-    var hdr = buildDocHeader(settings,"ADMISSION OFFER LETTER");
-    var html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Admission Letter</title><style>'+hdr.printStyles+'body{max-width:600px;margin:0 auto;}p{margin-bottom:10px;line-height:1.7;}</style></head><body>'+hdr.headerHtml+
-      '<p style="text-align:right;">'+formatDate(today())+'</p>'+
-      '<p><b>'+app.parentName+'</b><br/>'+app.parentAddress+'<br/>'+app.parentPhone+'</p>'+
-      '<p>Dear '+app.parentName+',</p>'+
-      '<p><b>RE: OFFER OF ADMISSION — '+app.firstname.toUpperCase()+' '+app.surname.toUpperCase()+'</b></p>'+
-      '<p>We are pleased to inform you that following a review of your ward\'s application (Ref: '+app.refNo+'), the management of <b>'+SCHOOL_NAME+'</b> has approved the admission of <b>'+app.firstname+' '+app.middlename+' '+app.surname+'</b> into <b>'+app.applyingForClass+'</b> for the <b>'+app.entrySession+'</b> academic session.</p>'+
-      '<p>Please report to the school\'s administrative office with the following:<br/>• Original birth certificate or sworn affidavit<br/>• Last school report card and transfer certificate<br/>• Four (4) recent passport photographs<br/>• Evidence of payment of acceptance fee<br/>• Completed medical form</p>'+
-      '<p>The school resumes on the date stated in the academic calendar. We look forward to welcoming your ward into the Assanusiyyah family.</p>'+
-      '<p>Yours faithfully,</p>'+
-      hdr.footerHtml+
-      '<p style="margin-top:20px;font-size:9px;color:#999;">Reference: '+app.refNo+' | Issued: '+today()+'</p>'+
-      '</body></html>';
+    var html = buildAdmissionLetterHtml(app, settings);
     var w=window.open("","_blank");
     if(w){w.document.write(html);w.document.close();w.print();}
   }
@@ -10183,12 +10459,11 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
             <div style={{fontSize:14,fontWeight:700,color:C.primaryDark}}>Application — {viewing.refNo}</div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {viewing.status==="Approved"&&<button onClick={function(){enrollFromApplication(viewing);}} style={{...S.btn("green"),fontSize:11}}>✅ Enrol Student</button>}
               {viewing.status==="Approved"&&<button onClick={function(){printAdmissionLetter(viewing);}} style={{...S.btn("blue"),fontSize:11}}>🖨 Print Offer Letter</button>}
               {viewing.status==="Pending"||viewing.status==="Under Review" ? (
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={function(){updateStatus(viewing.id,"Under Review","");setViewing(function(p){return{...p,status:"Under Review"};});}} style={{...S.btn("secondary"),fontSize:11}}>Review</button>
-                  <button onClick={function(){var r=window.prompt("Reason for approval (optional):");if(r!==null){updateStatus(viewing.id,"Approved",r);setViewing(function(p){return{...p,status:"Approved"};});}}} style={{...S.btn("green"),fontSize:11}}>✅ Approve</button>
+                  <button onClick={function(){var r=window.prompt("Reason for approval (optional):");if(r!==null){var newStu=approveAndEnroll(viewing.id,r);setViewing(function(p){return{...p,status:"Approved",enrolledStudentId:newStu&&newStu.id,admissionNo:newStu&&newStu.admissionNo};});alert("Approved and enrolled. Admission No: "+(newStu&&newStu.admissionNo));}}} style={{...S.btn("green"),fontSize:11}}>✅ Approve & Enrol</button>
                   <button onClick={function(){var r=window.prompt("Reason for rejection:");if(r){updateStatus(viewing.id,"Rejected",r);setViewing(function(p){return{...p,status:"Rejected"};});}}} style={{...S.btn("danger"),fontSize:11}}>❌ Reject</button>
                 </div>
               ):null}
@@ -10218,7 +10493,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
               {/* Application details */}
               <div style={S.card}>
                 <div style={{fontSize:11,fontWeight:700,color:C.primaryDark,marginBottom:10}}>APPLICATION DETAILS</div>
-                {[["Reference No.",viewing.refNo],["Applying For",viewing.applyingForClass],["Session",viewing.entrySession],["Boarding",viewing.boardingType],["Previous School",viewing.prevSchool||"—"],["Previous Class",viewing.prevClass||"—"],["Submitted",formatDate(viewing.submittedAt)],["Status",viewing.status],["Reviewed By",viewing.reviewedBy||"—"]].map(function(pair,i){
+                {[["Reference No.",viewing.refNo],["Applying For",viewing.applyingForClass],["Session",viewing.entrySession],["Boarding",viewing.boardingType],["Previous School",viewing.prevSchool||"—"],["Previous Class",viewing.prevClass||"—"],["Submitted",formatDate(viewing.submittedAt)],["Status",viewing.status],["Admission No.",viewing.admissionNo||"—"],["Reviewed By",viewing.reviewedBy||"—"]].map(function(pair,i){
                   return <div key={i} style={{display:"flex",gap:6,padding:"3px 0",borderBottom:"1px solid #F3F4F6",fontSize:12}}><span style={{color:C.textMuted,minWidth:110}}>{pair[0]}:</span><b>{pair[1]}</b></div>;
                 })}
                 {viewing.remarks&&<div style={{marginTop:8,background:"#FFF7ED",borderRadius:6,padding:"6px 10px",fontSize:11}}><b>Remarks:</b> {viewing.remarks}</div>}
@@ -11172,9 +11447,26 @@ function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, sub
     </div>);
   }
 
+  var isApproved = candidateApp&&(candidateApp.status==="Approved"||candidateApp.status==="Enrolled");
+
   function renderStatusBanner(){
     if(!candidateApp) return null;
-    var color = candidateApp.status==="Approved"||candidateApp.status==="Enrolled"?"#059669":candidateApp.status==="Rejected"?"#DC2626":"#D97706";
+    var color = isApproved?"#059669":candidateApp.status==="Rejected"?"#DC2626":"#D97706";
+    if(isApproved){
+      return(
+        <div style={{...S.card,marginBottom:14,background:"linear-gradient(135deg,#F0FDF4,#ECFDF5)",border:"2px solid #059669",textAlign:"center",padding:20}}>
+          <div style={{fontSize:32,marginBottom:6}}>🎉</div>
+          <div style={{fontSize:16,fontWeight:900,color:"#059669"}}>Congratulations, {candidateApp.firstname}!</div>
+          <div style={{fontSize:12,color:"#065F46",marginTop:4}}>Your application (Ref: {candidateApp.refNo}) has been <b>APPROVED</b> for {candidateApp.applyingForClass}, {candidateApp.entrySession}.</div>
+          {candidateApp.admissionNo&&<div style={{marginTop:10,display:"inline-block",background:"#fff",borderRadius:8,padding:"8px 16px"}}>
+            <div style={{fontSize:10,color:C.textMuted}}>ADMISSION NUMBER</div>
+            <div style={{fontSize:18,fontWeight:900,color:"#230E6A"}}>{candidateApp.admissionNo}</div>
+          </div>}
+          <div style={{fontSize:11,color:"#065F46",marginTop:10}}>You can now log in to the <b>Parent Portal</b> with this Admission Number and your registered phone number. Your admission letter and other documents are ready below.</div>
+          {candidateApp.remarks&&<div style={{marginTop:10,background:"#FFF7ED",borderRadius:6,padding:"8px 10px",fontSize:12,textAlign:"left"}}><b>Remarks:</b> {candidateApp.remarks}</div>}
+        </div>
+      );
+    }
     return(
       <div style={{...S.card,marginBottom:14,borderLeft:"4px solid "+color}}>
         <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
@@ -11184,11 +11476,39 @@ function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, sub
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:11,color:C.textMuted}}>Status</div>
-            <span style={S.badge(candidateApp.status==="Approved"||candidateApp.status==="Enrolled"?"green":candidateApp.status==="Rejected"?"red":"yellow")}>{candidateApp.status}</span>
+            <span style={S.badge(candidateApp.status==="Rejected"?"red":"yellow")}>{candidateApp.status}</span>
           </div>
         </div>
         {candidateApp.remarks&&<div style={{marginTop:8,background:"#FFF7ED",borderRadius:6,padding:"8px 10px",fontSize:12}}><b>Remarks:</b> {candidateApp.remarks}</div>}
         {candidateApp.status==="Pending"&&<div style={{marginTop:8,fontSize:11,color:C.textMuted}}>Your application is being reviewed. You can still edit and re-save it below until a decision is made.</div>}
+      </div>
+    );
+  }
+
+  function renderDocuments(){
+    var docs = [
+      {id:"letter",title:"🎓 Admission Letter",getHtml:function(){return buildAdmissionLetterHtml(candidateApp,settings);}},
+      {id:"bill",title:"💰 School Bill",getHtml:function(){return buildSchoolBillHtml(candidateApp,settings);}},
+      {id:"medical",title:"🏥 Medical Requirements",getHtml:function(){return buildMedicalRequirementsHtml(candidateApp,settings);}},
+    ];
+    if(candidateApp.boardingType==="Boarder"){
+      docs.push({id:"hostel",title:"🏠 Hostel Required Materials",getHtml:function(){return buildHostelMaterialsHtml(candidateApp,settings);}});
+    }
+    docs.push({id:"rules",title:"📜 School & Hostel Rules and Regulations",getHtml:function(){return buildRulesHtml(candidateApp,settings);}});
+    docs.push({id:"info",title:"ℹ️ General Information",getHtml:function(){return buildGeneralInfoHtml(candidateApp,settings);}});
+    return(
+      <div>
+        <div style={{...S.card,marginBottom:14,background:"#EFF6FF"}}>
+          <div style={{fontSize:12,color:"#1D4ED8"}}>Download, print or share any of the documents below. They're generated fresh each time using the school's latest information.</div>
+        </div>
+        {docs.map(function(d){
+          return(
+            <div key={d.id} style={{...S.card,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#230E6A"}}>{d.title}</div>
+              <DocActionBar getHtml={d.getHtml} filename={d.id+"_"+candidateApp.refNo.replace(/\//g,"-")} title={d.title}/>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -11226,7 +11546,7 @@ function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, sub
     );
   }
 
-  var NAV_TABS = [["form",mode==="new"?"📝 Fill Form":"📝 My Application"],["gallery","🖼 Gallery"],["calendar","📅 School Calendar"]];
+  var NAV_TABS = [["form",mode==="new"?"📝 Fill Form":"📝 My Application"],["gallery","🖼 Gallery"],["calendar","📅 School Calendar"]].concat(isApproved?[["documents","📄 Documents"]]:[]);
 
   return(
     <div style={{minHeight:"100vh",background:"#F9FAFB",fontFamily:"'Segoe UI',sans-serif"}}>
@@ -11263,6 +11583,7 @@ function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, sub
         )}
         {tab==="gallery"&&renderGallery()}
         {tab==="calendar"&&renderCalendar()}
+        {tab==="documents"&&isApproved&&renderDocuments()}
       </div>
     </div>
   );
@@ -11472,6 +11793,80 @@ function buildDocHeader(settings, title){
     footerHtml: stamp||sig ? '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:20px;padding-top:12px;border-top:1px solid #ccc;">'+(sig?'<div style="text-align:center;">'+sig+'<div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:9px;">Principal&#39;s Signature</div></div>':'')+(stamp?'<div style="text-align:center;">'+stamp+'<div style="font-size:9px;margin-top:2px;">School Stamp</div></div>':'')+'</div>' : '',
     printStyles: '*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:11px;padding:15px;}table{width:100%;border-collapse:collapse;}th{background:#8B0000;color:#fff;padding:6px;font-size:10px;text-align:left;}td{padding:5px 6px;border:1px solid #ddd;font-size:10px;}@media print{body{padding:5mm;}-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
   };
+}
+
+// ── Shared admission-document builders (used by both AdmissionsModule's
+// staff reprint and the public CandidatePortal's Approved-status downloads) ──
+function buildAdmissionLetterHtml(app, settings){
+  var hdr = buildDocHeader(settings,"ADMISSION OFFER LETTER");
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Admission Letter</title><style>'+hdr.printStyles+'body{max-width:600px;margin:0 auto;}p{margin-bottom:10px;line-height:1.7;}</style></head><body>'+hdr.headerHtml+
+    '<p style="text-align:right;">'+formatDate(today())+'</p>'+
+    '<p><b>'+app.parentName+'</b><br/>'+(app.parentAddress||"")+'<br/>'+app.parentPhone+'</p>'+
+    '<p>Dear '+app.parentName+',</p>'+
+    '<p><b>RE: OFFER OF ADMISSION — '+app.firstname.toUpperCase()+' '+app.surname.toUpperCase()+'</b></p>'+
+    '<p>We are pleased to inform you that following a review of your ward\'s application (Ref: '+app.refNo+'), the management of <b>'+SCHOOL_NAME+'</b> has approved the admission of <b>'+app.firstname+' '+(app.middlename||"")+' '+app.surname+'</b> into <b>'+app.applyingForClass+'</b> for the <b>'+app.entrySession+'</b> academic session'+(app.admissionNo?' with Admission Number <b>'+app.admissionNo+'</b>':'')+'.</p>'+
+    '<p>Please report to the school\'s administrative office with the following:<br/>• Original birth certificate or sworn affidavit<br/>• Last school report card and transfer certificate<br/>• Four (4) recent passport photographs<br/>• Evidence of payment of acceptance fee<br/>• Completed medical form</p>'+
+    (app.admissionNo?'<p>You may now log in to the Parent Portal using Admission Number <b>'+app.admissionNo+'</b> and the phone number provided on this application.</p>':'')+
+    '<p>The school resumes on the date stated in the academic calendar. We look forward to welcoming your ward into the Assanusiyyah family.</p>'+
+    '<p>Yours faithfully,</p>'+
+    hdr.footerHtml+
+    '<p style="margin-top:20px;font-size:9px;color:#999;">Reference: '+app.refNo+' | Issued: '+today()+'</p>'+
+    '</body></html>';
+}
+
+function buildSchoolBillHtml(app, settings){
+  var hdr = buildDocHeader(settings,"EXPECTED SCHOOL BILL");
+  var fs = (settings&&settings.feeStructure)||{};
+  var row = fs[app.applyingForClass]||{};
+  var amount = row[app.boardingType]||0;
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>School Bill</title><style>'+hdr.printStyles+'</style></head><body>'+hdr.headerHtml+
+    '<p><b>Candidate:</b> '+app.firstname+' '+app.surname+' &nbsp; <b>Ref:</b> '+app.refNo+'</p>'+
+    '<p><b>Class:</b> '+app.applyingForClass+' &nbsp; <b>Boarding Type:</b> '+app.boardingType+' &nbsp; <b>Session:</b> '+app.entrySession+'</p>'+
+    '<table><thead><tr><th>Description</th><th>Amount (₦)</th></tr></thead><tbody>'+
+    '<tr><td>'+app.applyingForClass+' — '+app.boardingType+' school fees (full session estimate)</td><td>'+amount.toLocaleString()+'</td></tr>'+
+    '</tbody></table>'+
+    '<p style="margin-top:14px;font-size:10px;color:#666;">This is an estimate for planning purposes. Actual termly fees, levies and any additional charges will be communicated by the Bursary upon enrolment.</p>'+
+    hdr.footerHtml+'</body></html>';
+}
+
+function buildHostelMaterialsHtml(app, settings){
+  var hdr = buildDocHeader(settings,"HOSTEL REQUIRED MATERIALS");
+  var items = (settings&&settings.hostelRequiredItems)||[];
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Hostel Materials</title><style>'+hdr.printStyles+'</style></head><body>'+hdr.headerHtml+
+    '<p><b>Candidate:</b> '+app.firstname+' '+app.surname+' &nbsp; <b>Ref:</b> '+app.refNo+'</p>'+
+    '<p>The following items should be provided by every boarding student on resumption:</p>'+
+    (items.length?'<ul>'+items.map(function(i){return '<li style="margin-bottom:4px;">'+i+'</li>';}).join("")+'</ul>':'<p style="color:#999;">No list has been published yet — please contact the school.</p>')+
+    hdr.footerHtml+'</body></html>';
+}
+
+function buildRulesHtml(app, settings){
+  var hdr = buildDocHeader(settings,"SCHOOL & HOSTEL RULES AND REGULATIONS");
+  function block(title, text){
+    if(!text) return '<p style="color:#999;">No '+title.toLowerCase()+' have been published yet.</p>';
+    return '<div style="margin-bottom:16px;"><div style="font-weight:800;margin-bottom:6px;">'+title+'</div><ul>'+text.split("\n").filter(Boolean).map(function(l){return '<li style="margin-bottom:4px;">'+l+'</li>';}).join("")+'</ul></div>';
+  }
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Rules and Regulations</title><style>'+hdr.printStyles+'</style></head><body>'+hdr.headerHtml+
+    block("School Rules & Regulations", settings&&settings.schoolRules)+
+    (app.boardingType==="Boarder"?block("Hostel Rules & Regulations", settings&&settings.hostelRules):'')+
+    hdr.footerHtml+'</body></html>';
+}
+
+function buildMedicalRequirementsHtml(app, settings){
+  var hdr = buildDocHeader(settings,"MEDICAL REQUIREMENTS FOR ADMISSION");
+  var text = (settings&&settings.medicalRequirements)||"";
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Medical Requirements</title><style>'+hdr.printStyles+'</style></head><body>'+hdr.headerHtml+
+    '<p><b>Candidate:</b> '+app.firstname+' '+app.surname+' &nbsp; <b>Ref:</b> '+app.refNo+'</p>'+
+    '<p>Please provide the following medical documentation on resumption:</p>'+
+    (text?'<ul>'+text.split("\n").filter(Boolean).map(function(l){return '<li style="margin-bottom:4px;">'+l+'</li>';}).join("")+'</ul>':'<p style="color:#999;">No requirements have been published yet — please contact the school clinic.</p>')+
+    hdr.footerHtml+'</body></html>';
+}
+
+function buildGeneralInfoHtml(app, settings){
+  var hdr = buildDocHeader(settings,"GENERAL INFORMATION FOR NEW STUDENTS");
+  var text = (settings&&settings.generalInfo)||"";
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>General Info</title><style>'+hdr.printStyles+'</style></head><body>'+hdr.headerHtml+
+    (text?'<div>'+text.split("\n").filter(Boolean).map(function(l){return '<p>'+l+'</p>';}).join("")+'</div>':'<p style="color:#999;">No general information has been published yet — please contact the school.</p>')+
+    hdr.footerHtml+'</body></html>';
 }
 
 function getExpirySession(person){
@@ -11686,7 +12081,8 @@ function IDCardsModule({students, staff, settings, currentUser}){
 .back-msg{padding:10px 14px;text-align:center;}
 .return-box{background:${ac};border-radius:8px;padding:8px 12px;color:#fff;}
 .sig-row{padding:0 14px 8px;display:flex;justify-content:space-between;align-items:flex-end;}
-@media print{body{background:#fff;padding:5mm;}}</style></head>
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+@media print{body{background:#fff;padding:5mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style></head>
 <body>
 <div class="card">
   <div class="header">
@@ -12258,7 +12654,7 @@ export default function App(){
         {page==="attendance"&&(userCanAccess(currentUser,"attendance")?<AttendanceModule students={students} attendance={attendance} setAttendance={setAttendance} settings={settings}/>:<AccessDenied/>)}
         {page==="results"&&(userCanAccess(currentUser,"results")?<ResultsModule students={students} results={results} setResults={setResults} settings={settings} staff={staff} currentUser={currentUser} classRemarks={classRemarks} setClassRemarks={setClassRemarks} assignments={assignments} setAssignments={setAssignments}/>:<AccessDenied/>)}
         {page==="lessons"&&(userCanAccess(currentUser,"lessons")?<LessonsModule staff={staff} students={students} lessons={lessons} setLessons={setLessons} assignments={assignments} setAssignments={setAssignments} currentUser={currentUser}/>:<AccessDenied/>)}
-        {page==="studentportal"&&(userCanAccess(currentUser,"studentportal")?<StudentPortalModule students={students} staff={staff} lessons={lessons} assignments={assignments} submissions={submissions} setSubmissions={setSubmissions} results={results} setResults={setResults} currentUser={currentUser}/>:<AccessDenied/>)}
+        {page==="studentportal"&&(userCanAccess(currentUser,"studentportal")?<StudentPortalModule students={students} staff={staff} lessons={lessons} assignments={assignments} submissions={submissions} setSubmissions={setSubmissions} results={results} setResults={setResults} currentUser={currentUser} settings={settings} elibrary={elibrary}/>:<AccessDenied/>)}
         {page==="fees"&&(userCanAccess(currentUser,"fees")?<FeesModule students={students} fees={fees} setFees={setFees} expenditure={expenditure} setExpenditure={setExpenditure} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="staff"&&(userCanAccess(currentUser,"staff")?<StaffModule staff={staff} setStaff={setStaff}/>:<AccessDenied/>)}
         {page==="timetable"&&(userCanAccess(currentUser,"timetable")?<TimetableModule staff={staff} timetable={timetable} setTimetable={setTimetable} settings={settings}/>:<AccessDenied/>)}
