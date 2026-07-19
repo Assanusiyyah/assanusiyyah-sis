@@ -53,7 +53,7 @@ exports.handler = async function(event, context) {
   };
 
   try {
-    const [allResults, allAttendance, allFees, diary, elibrary, allLessons, allAssignments, allSubmissions, allExams, gallery, allSettings] = await Promise.all([
+    const [allResults, allAttendance, allFees, diary, elibrary, allLessons, allAssignments, allSubmissions, allExams, gallery, allSettings, allStudents] = await Promise.all([
       fetchTable(sbHeaders, "results"),
       fetchTable(sbHeaders, "attendance"),
       fetchTable(sbHeaders, "fees"),
@@ -64,7 +64,8 @@ exports.handler = async function(event, context) {
       fetchTable(sbHeaders, "submissions"),
       fetchTable(sbHeaders, "exams"),
       fetchTable(sbHeaders, "gallery"),
-      fetchTable(sbHeaders, "settings")
+      fetchTable(sbHeaders, "settings"),
+      fetchTable(sbHeaders, "students")
     ]);
 
     // A result is visible unless its session/term has been explicitly hidden
@@ -94,7 +95,60 @@ exports.handler = async function(event, context) {
         return { id: e.id, title: e.title, subject: e.subject, class: e.class, arm: e.arm, duration: e.duration, date: e.date, session: e.session, term: e.term };
       });
 
-    return { statusCode: 200, headers, body: JSON.stringify({ results, attendance, fees, diary, elibrary, lessons, assignments, submissions, exams, gallery }) };
+    // Position/class-average for the report-card print/share export. Only
+    // aggregate numbers are computed and returned here — never another
+    // student's name or scores — so this stays safe for a parent-scoped token.
+    const classStudentIds = allStudents
+      .filter(function(s) { return s.active && s.class === studentClass && (s.arm || "A") === (studentArm || "A"); })
+      .map(function(s) { return s.id; });
+
+    function classResultsFor(session, term) {
+      return allResults.filter(function(r) { return r.class === studentClass && r.session === session && r.term === term && classStudentIds.indexOf(r.studentId) !== -1; });
+    }
+
+    const sessionTermKeys = Array.from(new Set(results.map(function(r) { return r.session + "|" + r.term; })));
+    const resultStats = {};
+    sessionTermKeys.forEach(function(key) {
+      const parts = key.split("|");
+      const session = parts[0], term = parts[1];
+      const classResults = classResultsFor(session, term);
+      const byStudent = {};
+      classResults.forEach(function(r) {
+        if (!byStudent[r.studentId]) byStudent[r.studentId] = [];
+        byStudent[r.studentId].push(r.total || 0);
+      });
+      const studentAvgs = Object.keys(byStudent).map(function(sid) {
+        const scores = byStudent[sid];
+        return { sid: sid, avg: scores.reduce(function(a, b) { return a + b; }, 0) / scores.length };
+      }).sort(function(a, b) { return b.avg - a.avg; });
+      const myIdx = studentAvgs.findIndex(function(s) { return s.sid === studentId; });
+      const avgs = studentAvgs.map(function(s) { return s.avg; });
+      const overall = {
+        position: myIdx >= 0 ? myIdx + 1 : null,
+        classSize: studentAvgs.length,
+        classAvg: avgs.length ? parseFloat((avgs.reduce(function(a, b) { return a + b; }, 0) / avgs.length).toFixed(2)) : null,
+        classHighest: avgs.length ? parseFloat(avgs[0].toFixed(2)) : null,
+        classLowest: avgs.length ? parseFloat(avgs[avgs.length - 1].toFixed(2)) : null
+      };
+
+      const subjectsInTerm = Array.from(new Set(classResults.map(function(r) { return r.subject; })));
+      const subjects = {};
+      subjectsInTerm.forEach(function(sub) {
+        const subResults = classResults.filter(function(r) { return r.subject === sub; }).sort(function(a, b) { return (b.total || 0) - (a.total || 0); });
+        const totals = subResults.map(function(r) { return r.total || 0; });
+        const myPos = subResults.findIndex(function(r) { return r.studentId === studentId; });
+        subjects[sub] = {
+          avg: totals.length ? parseFloat((totals.reduce(function(a, b) { return a + b; }, 0) / totals.length).toFixed(1)) : 0,
+          highest: totals.length ? Math.max.apply(null, totals) : 0,
+          lowest: totals.length ? Math.min.apply(null, totals) : 0,
+          position: myPos >= 0 ? myPos + 1 : null
+        };
+      });
+
+      resultStats[key] = Object.assign({}, overall, { subjects: subjects });
+    });
+
+    return { statusCode: 200, headers, body: JSON.stringify({ results, attendance, fees, diary, elibrary, lessons, assignments, submissions, exams, gallery, resultStats }) };
 
   } catch (err) {
     console.error("[ParentData] Exception:", err.message);

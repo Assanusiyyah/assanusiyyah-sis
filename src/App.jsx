@@ -501,16 +501,16 @@ const SEED_DIARY = [
 ];
 
 const SEED_ELIBRARY = [
-  {id:"BK001",title:"New General Mathematics SSS 1",author:"M.F. Macrae et al.",subject:"Mathematics",category:"Textbook",level:"SS1",type:"link",url:"https://www.academia.edu/",description:"Comprehensive SS1 Mathematics covering algebra, geometry and statistics.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK002",title:"New General Mathematics SSS 2",author:"M.F. Macrae et al.",subject:"Mathematics",category:"Textbook",level:"SS2",type:"link",url:"https://www.academia.edu/",description:"SS2 Mathematics covering calculus, statistics and further algebra.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK003",title:"New General Mathematics SSS 3",author:"M.F. Macrae et al.",subject:"Mathematics",category:"Textbook",level:"SS3",type:"link",url:"https://www.academia.edu/",description:"SS3 Mathematics — WAEC/NECO exam preparation with past questions.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK004",title:"Oral English for Schools and Colleges",author:"Sam Onuigbo",subject:"English Language",category:"Textbook",level:"All",type:"link",url:"https://www.academia.edu/",description:"Practical guide to oral English skills for Nigerian secondary school students.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK005",title:"Countdown to WASSCE English Language",author:"Olatunde Ogunmodede",subject:"English Language",category:"Past Questions",level:"SS3",type:"link",url:"https://www.academia.edu/",description:"Comprehensive WASSCE English preparation covering all sections.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK006",title:"Biology for Senior Secondary Schools",author:"Idodo-Umeh",subject:"Biology",category:"Textbook",level:"SS",type:"link",url:"https://www.academia.edu/",description:"Covers all WAEC Biology topics — ecology, genetics, human physiology.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK007",title:"Chemistry for Senior Secondary Schools 1",author:"Osei Yaw Ababio",subject:"Chemistry",category:"Textbook",level:"SS1",type:"link",url:"https://www.academia.edu/",description:"Foundation Chemistry covering atomic structure, bonding and reactions.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK008",title:"Physics for Senior Secondary Schools",author:"Abbott",subject:"Physics",category:"Textbook",level:"SS",type:"link",url:"https://www.academia.edu/",description:"Complete Physics for WAEC/NECO covering mechanics, waves, electricity.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK009",title:"Economics for Senior Secondary Schools",author:"E.U. Essien",subject:"Economics",category:"Textbook",level:"SS",type:"link",url:"https://www.academia.edu/",description:"Covers micro and macroeconomics, Nigerian economy and international trade.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK010",title:"Government for Senior Secondary Schools",author:"Oyeleye",subject:"Government",category:"Textbook",level:"SS",type:"link",url:"https://www.academia.edu/",description:"Nigerian government and politics, constitution and comparative government.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK001",title:"New General Mathematics SSS 1",author:"M.F. Macrae et al.",subject:"Mathematics",category:"Textbook",level:"SS1",type:"link",url:"https://passnownow.com/",description:"Comprehensive SS1 Mathematics covering algebra, geometry and statistics.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK002",title:"New General Mathematics SSS 2",author:"M.F. Macrae et al.",subject:"Mathematics",category:"Textbook",level:"SS2",type:"link",url:"https://passnownow.com/",description:"SS2 Mathematics covering calculus, statistics and further algebra.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK003",title:"New General Mathematics SSS 3",author:"M.F. Macrae et al.",subject:"Mathematics",category:"Textbook",level:"SS3",type:"link",url:"https://passnownow.com/",description:"SS3 Mathematics — WAEC/NECO exam preparation with past questions.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK004",title:"Oral English for Schools and Colleges",author:"Sam Onuigbo",subject:"English Language",category:"Textbook",level:"All",type:"link",url:"https://passnownow.com/",description:"Practical guide to oral English skills for Nigerian secondary school students.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK005",title:"Countdown to WASSCE English Language",author:"Olatunde Ogunmodede",subject:"English Language",category:"Past Questions",level:"SS3",type:"link",url:"https://passnownow.com/",description:"Comprehensive WASSCE English preparation covering all sections.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK006",title:"Biology for Senior Secondary Schools",author:"Idodo-Umeh",subject:"Biology",category:"Textbook",level:"SS",type:"link",url:"https://passnownow.com/",description:"Covers all WAEC Biology topics — ecology, genetics, human physiology.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK007",title:"Chemistry for Senior Secondary Schools 1",author:"Osei Yaw Ababio",subject:"Chemistry",category:"Textbook",level:"SS1",type:"link",url:"https://passnownow.com/",description:"Foundation Chemistry covering atomic structure, bonding and reactions.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK008",title:"Physics for Senior Secondary Schools",author:"Abbott",subject:"Physics",category:"Textbook",level:"SS",type:"link",url:"https://passnownow.com/",description:"Complete Physics for WAEC/NECO covering mechanics, waves, electricity.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK009",title:"Economics for Senior Secondary Schools",author:"E.U. Essien",subject:"Economics",category:"Textbook",level:"SS",type:"link",url:"https://passnownow.com/",description:"Covers micro and macroeconomics, Nigerian economy and international trade.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK010",title:"Government for Senior Secondary Schools",author:"Oyeleye",subject:"Government",category:"Textbook",level:"SS",type:"link",url:"https://passnownow.com/",description:"Nigerian government and politics, constitution and comparative government.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK011",title:"WAEC Past Questions — Mathematics 2019-2024",author:"WAEC",subject:"Mathematics",category:"Past Questions",level:"SS3",type:"link",url:"https://www.waecdirect.org/",description:"Six years of WAEC Mathematics questions with marking schemes. Essential for exam prep.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK012",title:"WAEC Past Questions — English Language 2019-2024",author:"WAEC",subject:"English Language",category:"Past Questions",level:"SS3",type:"link",url:"https://www.waecdirect.org/",description:"WAEC English past questions — comprehension, essay, oral and summary.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK013",title:"WAEC Past Questions — Biology 2019-2024",author:"WAEC",subject:"Biology",category:"Past Questions",level:"SS3",type:"link",url:"https://www.waecdirect.org/",description:"Six years of WAEC Biology with answers. Essential revision for final year students.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
@@ -518,19 +518,19 @@ const SEED_ELIBRARY = [
   {id:"BK015",title:"Holy Quran — Arabic with English Translation",author:"Sahih International",subject:"Islamic Religious Studies",category:"Religious Text",level:"All",type:"link",url:"https://quran.com/",description:"Complete Quran with Arabic text and English translation. Open access for all.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK016",title:"40 Hadith Nawawi — Arabic & English",author:"Imam An-Nawawi",subject:"Islamic Religious Studies",category:"Religious Text",level:"All",type:"link",url:"https://sunnah.com/nawawi40",description:"The 40 famous hadith of Imam Nawawi with Arabic text and English explanation.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK017",title:"The Holy Bible (NIV)",author:"International Bible Society",subject:"Christian Religious Studies",category:"Religious Text",level:"All",type:"link",url:"https://www.bible.com/bible/111/GEN.1.NIV",description:"Complete NIV Bible for Christian Religious Studies students and staff.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK018",title:"Junior Secondary Mathematics JSS1",author:"MAN — Mathematical Association",subject:"Mathematics",category:"Textbook",level:"JSS1",type:"link",url:"https://www.academia.edu/",description:"JSS1 Mathematics — number systems, basic algebra, geometry and measurements.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK019",title:"Junior Secondary Mathematics JSS2",author:"MAN",subject:"Mathematics",category:"Textbook",level:"JSS2",type:"link",url:"https://www.academia.edu/",description:"JSS2 Mathematics — fractions, indices, graphs, plane geometry.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK020",title:"Junior Secondary Mathematics JSS3",author:"MAN",subject:"Mathematics",category:"Textbook",level:"JSS3",type:"link",url:"https://www.academia.edu/",description:"JSS3 Mathematics — trigonometry, statistics, simultaneous equations. BECE prep.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK021",title:"Basic Science JSS1-JSS3",author:"Stan Achimugu",subject:"Basic Science",category:"Textbook",level:"JSS",type:"link",url:"https://www.academia.edu/",description:"Complete Basic Science for junior secondary covering biology, physics and chemistry foundations.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK022",title:"Civic Education for Senior Secondary Schools",author:"Okoye",subject:"Civic Education",category:"Textbook",level:"SS",type:"link",url:"https://www.academia.edu/",description:"Citizenship, democracy, human rights and Nigerian governance.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK023",title:"Agricultural Science for Senior Secondary Schools",author:"Akinsanmi",subject:"Agricultural Science",category:"Textbook",level:"SS",type:"link",url:"https://www.academia.edu/",description:"Crop production, animal husbandry, farm management and agricultural economics.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK024",title:"Computer Studies for JSS",author:"Fagbola",subject:"Computer Science",category:"Textbook",level:"JSS",type:"link",url:"https://www.academia.edu/",description:"Introduction to computing, Microsoft Office, internet safety and programming basics.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK018",title:"Junior Secondary Mathematics JSS1",author:"MAN — Mathematical Association",subject:"Mathematics",category:"Textbook",level:"JSS1",type:"link",url:"https://passnownow.com/",description:"JSS1 Mathematics — number systems, basic algebra, geometry and measurements.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK019",title:"Junior Secondary Mathematics JSS2",author:"MAN",subject:"Mathematics",category:"Textbook",level:"JSS2",type:"link",url:"https://passnownow.com/",description:"JSS2 Mathematics — fractions, indices, graphs, plane geometry.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK020",title:"Junior Secondary Mathematics JSS3",author:"MAN",subject:"Mathematics",category:"Textbook",level:"JSS3",type:"link",url:"https://passnownow.com/",description:"JSS3 Mathematics — trigonometry, statistics, simultaneous equations. BECE prep.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK021",title:"Basic Science JSS1-JSS3",author:"Stan Achimugu",subject:"Basic Science",category:"Textbook",level:"JSS",type:"link",url:"https://passnownow.com/",description:"Complete Basic Science for junior secondary covering biology, physics and chemistry foundations.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK022",title:"Civic Education for Senior Secondary Schools",author:"Okoye",subject:"Civic Education",category:"Textbook",level:"SS",type:"link",url:"https://passnownow.com/",description:"Citizenship, democracy, human rights and Nigerian governance.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK023",title:"Agricultural Science for Senior Secondary Schools",author:"Akinsanmi",subject:"Agricultural Science",category:"Textbook",level:"SS",type:"link",url:"https://passnownow.com/",description:"Crop production, animal husbandry, farm management and agricultural economics.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK024",title:"Computer Studies for JSS",author:"Fagbola",subject:"Computer Science",category:"Textbook",level:"JSS",type:"link",url:"https://passnownow.com/",description:"Introduction to computing, Microsoft Office, internet safety and programming basics.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK025",title:"Khan Academy — Free Online Lessons",author:"Khan Academy",subject:"Mathematics",category:"Video Link",level:"All",type:"link",url:"https://www.khanacademy.org/",description:"Free video lessons on Mathematics, Science, Economics and more. Works on any device.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK026",title:"CK-12 — Free Textbooks & Exercises",author:"CK-12 Foundation",subject:"Basic Science",category:"Reference",level:"All",type:"link",url:"https://www.ck12.org/",description:"Free digital textbooks on Science and Mathematics. Includes exercises and simulations.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK027",title:"WAEC Direct — Official Results & Resources",author:"WAEC",subject:"General",category:"Reference",level:"SS3",type:"link",url:"https://www.waecdirect.org/",description:"Official WAEC portal for checking results, past questions and examination guides.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
   {id:"BK028",title:"Encyclopaedia Britannica — Student Edition",author:"Britannica",subject:"General",category:"Reference",level:"All",type:"link",url:"https://www.britannica.com/",description:"Trusted encyclopaedia for research on any topic across all subjects.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK029",title:"Literature — Things Fall Apart",author:"Chinua Achebe",subject:"Literature in English",category:"Novel / Literature",level:"SS",type:"link",url:"https://www.academia.edu/",description:"Chinua Achebe's classic Nigerian novel — required text for WAEC Literature in English.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
-  {id:"BK030",title:"Literature — The Trials of Brother Jero",author:"Wole Soyinka",subject:"Literature in English",category:"Novel / Literature",level:"SS",type:"link",url:"https://www.academia.edu/",description:"Wole Soyinka's satirical play. Key text for senior secondary Literature students.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK029",title:"Literature — Things Fall Apart",author:"Chinua Achebe",subject:"Literature in English",category:"Novel / Literature",level:"SS",type:"link",url:"https://passnownow.com/",description:"Chinua Achebe's classic Nigerian novel — required text for WAEC Literature in English.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
+  {id:"BK030",title:"Literature — The Trials of Brother Jero",author:"Wole Soyinka",subject:"Literature in English",category:"Novel / Literature",level:"SS",type:"link",url:"https://passnownow.com/",description:"Wole Soyinka's satirical play. Key text for senior secondary Literature students.",uploadedBy:"Admin",uploadedAt:"2026-01-10",downloads:0,views:0},
 ];
 
 const SEED_CLINIC = [
@@ -661,13 +661,240 @@ function generateComment(kind, ctx){
   };
   var t = templates[band] || templates.F;
   if(kind==="principal") return t.principal;
-  return t.teacher; // teacher & form master comments share the same performance-driven tone
+  return t.teacher;
 }
 function ordinalSuffix(n){
   if(!n) return n;
   var s=["th","st","nd","rd"];
   var v=n%100;
   return n+(s[(v-20)%10]||s[v]||s[0]);
+}
+function ordinal(n){
+  if(!n||n==="-") return "-";
+  return ordinalSuffix(n);
+}
+
+// Static rating-scale data shared by the staff Results module and the
+// Parent/Student portal report card exports.
+const AFFECTIVE_TRAITS = [
+  "Punctuality","Mental Alertness","Behavior","Reliability","Attentiveness",
+  "Respect","Neatness","Politeness","Honesty","Relationship with staff",
+  "Relationship with students","Attitude to school","Self-control",
+  "Spirit of teamwork","Initiatives","Organizational ability"
+];
+const PSYCHOMOTOR_SKILLS = [
+  "Handwriting","Reading","Verbal fluency/Diction","Musical Skills",
+  "Creative arts","Physical education","General reasoning"
+];
+const RATING_KEY = [
+  {v:5,m:"Maintains an excellent degree of observation"},
+  {v:4,m:"Maintains high level of observation trait"},
+  {v:3,m:"Acceptable level of observation trait"},
+  {v:2,m:"Shows minimal level of observation trait"},
+  {v:1,m:"Has no regard for observation trait"},
+];
+
+// Builds the printable/shareable report-card HTML used by both the staff
+// Results module and the Parent/Student portals, so a family sees exactly
+// the same document a teacher would print. `stats` (overall position/class
+// average) may be null/omitted when class-mate data isn't available to the
+// caller — the position/class-average rows are simply left blank.
+function buildReportCardHtml(opts){
+  var student = opts.student, settings = opts.settings, rc = opts.rc;
+  var term = opts.term, session = opts.session;
+  var subjectRows = opts.subjectRows||[];
+  var stats = opts.stats||null;
+  var meta = opts.meta||{};
+  var nextTerm = opts.nextTerm||"";
+  var daysOpened = opts.daysOpened||"";
+  var logo = settings&&settings.schoolLogo ? settings.schoolLogo : "";
+  var stamp = settings&&settings.schoolStamp ? settings.schoolStamp : "";
+  var sig = settings&&settings.signature ? settings.signature : "";
+  var totalMax = rc.ca1Max+rc.ca2Max+rc.examMax;
+  var showPos = !!(rc.showPosition && stats);
+  var showClassAvg = !!(rc.showClassAverage && stats);
+
+  var html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<title>Report Card - ${student.surname} ${student.firstname}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff;}
+  .page{width:210mm;min-height:297mm;padding:8mm;margin:0 auto;}
+  .header{display:flex;align-items:center;gap:10px;border-bottom:3px solid #8B0000;padding-bottom:8px;margin-bottom:8px;}
+  .header img{width:70px;height:70px;object-fit:contain;}
+  .header-text{flex:1;text-align:center;}
+  .school-name{font-size:22px;font-weight:900;color:#8B0000;letter-spacing:1px;}
+  .school-motto{font-size:11px;color:#444;margin:2px 0;}
+  .school-address{font-size:10px;color:#555;}
+  .exam-title{text-align:center;font-size:14px;font-weight:800;margin:6px 0;text-decoration:underline;color:#8B0000;}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;border:1px solid #ccc;padding:6px;}
+  .info-row{display:flex;gap:4px;font-size:10px;}
+  .info-label{font-weight:700;min-width:80px;}
+  .stats-box{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #8B0000;margin-bottom:6px;}
+  .stats-col{padding:4px 6px;}
+  .stats-item{display:flex;justify-content:space-between;font-size:9.5px;padding:1px 0;border-bottom:1px solid #eee;}
+  .stats-item:last-child{border-bottom:none;}
+  .stats-label{color:#333;}
+  .stats-value{font-weight:700;color:#8B0000;}
+  table{width:100%;border-collapse:collapse;margin-bottom:6px;}
+  th{background:#8B0000;color:#fff;padding:4px 3px;font-size:9px;text-align:center;border:1px solid #8B0000;}
+  td{padding:3px;font-size:9px;border:1px solid #ccc;text-align:center;}
+  td.subject-name{text-align:left;font-weight:600;}
+  .grade-A{color:#006600;font-weight:700;}
+  .grade-B{color:#004080;font-weight:700;}
+  .grade-C{color:#806000;font-weight:700;}
+  .grade-D,.grade-E,.grade-F{color:#800000;font-weight:700;}
+  .bottom-section{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;}
+  .affective-box{border:1px solid #8B0000;}
+  .affective-header{background:#8B0000;color:#fff;padding:3px 5px;font-size:9px;font-weight:700;}
+  .affective-row{display:flex;justify-content:space-between;padding:2px 5px;border-bottom:1px solid #eee;font-size:8.5px;}
+  .score-range-box{border:1px solid #8B0000;}
+  .range-row{display:flex;justify-content:space-between;padding:2px 4px;border-bottom:1px solid #eee;font-size:8px;}
+  .key-box{border:1px solid #8B0000;}
+  .key-row{display:flex;gap:4px;padding:2px 4px;border-bottom:1px solid #eee;font-size:8px;}
+  .comment-section{margin-top:6px;}
+  .comment-box{border:1px solid #ccc;padding:4px 6px;min-height:24px;margin-bottom:4px;}
+  .comment-label{font-weight:700;font-size:9px;margin-bottom:2px;}
+  .signature-row{display:flex;justify-content:space-between;margin-top:8px;align-items:flex-end;}
+  .sig-box{text-align:center;min-width:120px;}
+  .sig-line{border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:9px;}
+  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+</style></head><body><div class="page">
+
+  <div class="header">
+    ${logo ? `<img src="${logo}" alt="Logo"/>` : `<div style="width:70px;height:70px;border:2px solid #8B0000;display:flex;align-items:center;justify-content:center;font-weight:900;color:#8B0000;font-size:18px;">AS</div>`}
+    <div class="header-text">
+      <div class="school-name">${SCHOOL_NAME}</div>
+      <div class="school-motto">Learning, Moral And Religion</div>
+      <div class="school-address">${SCHOOL_ADDRESS}</div>
+    </div>
+    ${logo ? `<img src="${logo}" alt="Logo"/>` : `<div style="width:70px;height:70px;border:2px solid #8B0000;display:flex;align-items:center;justify-content:center;font-weight:900;color:#8B0000;font-size:18px;">AS</div>`}
+  </div>
+
+  <div class="exam-title">${term.toUpperCase()} EXAMINATION</div>
+
+  <div class="info-grid">
+    <div>
+      <div class="info-row"><span class="info-label">Session:</span><span>${session}/${term.replace(" Term","")}</span></div>
+      <div class="info-row"><span class="info-label">Name of student:</span><b>${student.surname} ${student.firstname} ${student.middlename||""}</b></div>
+      <div class="info-row"><span class="info-label">Class:</span><span>${student.class}${student.arm||""}</span></div>
+    </div>
+    <div>
+      <div class="info-row"><span class="info-label">Term:</span><span>${term.replace(" Term","")}</span></div>
+      <div class="info-row"><span class="info-label">Reg. No:</span><span>${student.admissionNo||""}</span></div>
+      <div class="info-row"><span class="info-label">Next term begins:</span><span>${nextTerm||"_______________"}</span></div>
+    </div>
+  </div>
+
+  <div class="stats-box">
+    <div class="stats-col">
+      ${showPos?`<div class="stats-item"><span class="stats-label">Position in entire class</span><span class="stats-value">${ordinal(stats.position)}</span></div>`:""}
+      <div class="stats-item"><span class="stats-label">Overall total score</span><span class="stats-value">${stats ? stats.totalScore : "-"}</span></div>
+      <div class="stats-item"><span class="stats-label">Student's average score</span><span class="stats-value">${stats ? stats.avg : "-"}</span></div>
+      ${showClassAvg?`<div class="stats-item"><span class="stats-label">Highest average in class</span><span class="stats-value">${stats.classHighest}</span></div>`:""}
+    </div>
+    <div class="stats-col">
+      <div class="stats-item"><span class="stats-label">No. of students in class</span><span class="stats-value">${stats?stats.classSize:"-"}</span></div>
+      ${showClassAvg?`<div class="stats-item"><span class="stats-label">Class average score</span><span class="stats-value">${stats.classAvg}</span></div>
+      <div class="stats-item"><span class="stats-label">Lowest average in class</span><span class="stats-value">${stats.classLowest}</span></div>`:""}
+      <div class="stats-item"><span class="stats-label">No. of days school opened</span><span class="stats-value">${daysOpened||"-"}</span></div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:left;min-width:100px;">SUBJECT</th>
+        <th>TEST 1<br/>(${rc.ca1Max})</th>
+        <th>TEST 2<br/>(${rc.ca2Max})</th>
+        <th>EXAM<br/>(${rc.examMax})</th>
+        <th>TOTAL<br/>(${totalMax})</th>
+        <th>GRADE</th>
+        ${showPos?"<th>SUBJECT<br/>POSITION</th>":""}
+        ${showClassAvg?"<th>CLASS<br/>AVERAGE</th><th>WEIGHTED<br/>SCORE</th><th>HIGHEST<br/>IN CLASS</th><th>LOWEST<br/>IN CLASS</th>":""}
+        <th>REMARK</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${subjectRows.map(function(row){
+        var gc = row.grade.grade.startsWith("A")?"grade-A":row.grade.grade.startsWith("B")?"grade-B":row.grade.grade.startsWith("C")?"grade-C":"grade-F";
+        return `<tr>
+          <td class="subject-name">${row.sub}</td>
+          <td>${row.ca1||"-"}</td>
+          <td>${row.ca2||"-"}</td>
+          <td>${row.exam||"-"}</td>
+          <td style="font-weight:700;">${row.total||"-"}</td>
+          <td class="${gc}">${row.grade.grade}</td>
+          ${showPos?`<td>${ordinal(row.pos)}</td>`:""}
+          ${showClassAvg?`<td>${row.classAvg}</td><td>${row.weighted}</td><td style="color:#006600;font-weight:700;">${row.highest}</td><td style="color:#800000;font-weight:700;">${row.lowest}</td>`:""}
+          <td style="color:${row.total>=70?"#006600":row.total>=50?"#806000":"#800000"};font-weight:600;">${row.grade.remark}</td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  </table>
+
+  ${(rc.showAffectiveTraits||rc.showPsychomotorSkills)?`<div class="bottom-section">
+    ${rc.showAffectiveTraits?`<div>
+      <div class="affective-box" style="margin-bottom:4px;">
+        <div class="affective-header">AFFECTIVE TRAITS</div>
+        ${AFFECTIVE_TRAITS.slice(0,8).map(function(t){
+          var rating = (meta.affectiveTraits||{})[t]||"";
+          return `<div class="affective-row"><span>${t}</span><span style="font-weight:700;">${rating}</span></div>`;
+        }).join("")}
+      </div>
+      <div class="affective-box">
+        <div class="affective-header">AFFECTIVE TRAITS (cont.)</div>
+        ${AFFECTIVE_TRAITS.slice(8).map(function(t){
+          var rating = (meta.affectiveTraits||{})[t]||"";
+          return `<div class="affective-row"><span>${t}</span><span style="font-weight:700;">${rating}</span></div>`;
+        }).join("")}
+      </div>
+    </div>`:""}
+    <div>
+      ${rc.showPsychomotorSkills?`<div class="affective-box" style="margin-bottom:4px;">
+        <div class="affective-header">PSYCHOMOTOR SKILLS</div>
+        ${PSYCHOMOTOR_SKILLS.map(function(t){
+          var rating = (meta.psychomotorSkills||{})[t]||"";
+          return `<div class="affective-row"><span>${t}</span><span style="font-weight:700;">${rating}</span></div>`;
+        }).join("")}
+      </div>`:""}
+      <div class="score-range-box">
+        <div class="affective-header">SCORE RANGE</div>
+        ${[["0%-30%","F","Fail"],["30%-40%","E","Poor"],["40%-50%","D","Pass"],["50%-60%","C","Good"],["60%-70%","B","Very good"],["70%-100%","A","Excellent"]].map(function(row){
+          return `<div class="range-row"><span>${row[0]}</span><span style="font-weight:700;">${row[1]}</span><span>${row[2]}</span></div>`;
+        }).join("")}
+      </div>
+    </div>
+    <div>
+      <div class="key-box">
+        <div class="affective-header">KEY &nbsp;&nbsp; MEANING</div>
+        ${RATING_KEY.map(function(k){
+          return `<div class="key-row"><span style="font-weight:700;min-width:12px;">${k.v}</span><span>${k.m}</span></div>`;
+        }).join("")}
+      </div>
+    </div>
+  </div>`:""}
+
+  ${rc.showComments?`<div class="comment-section">
+    <div class="comment-label">Teacher's Comment:</div>
+    <div class="comment-box">${meta.teacherComment||""}</div>
+    <div class="comment-label">Principal's Comment:</div>
+    <div class="comment-box">${meta.principalComment||""}</div>
+  </div>`:""}
+
+  <div class="signature-row">
+    <div class="sig-box">
+      ${stamp ? `<img src="${stamp}" style="height:60px;object-fit:contain;"/>` : `<div style="height:60px;border:1px dashed #ccc;display:flex;align-items:center;justify-content:center;color:#999;font-size:9px;">School Stamp</div>`}
+      <div class="sig-line">School Stamp</div>
+    </div>
+    <div class="sig-box">
+      ${sig ? `<img src="${sig}" style="height:60px;object-fit:contain;"/>` : `<div style="height:60px;border:1px dashed #ccc;display:flex;align-items:center;justify-content:center;color:#999;font-size:9px;">Signature</div>`}
+      <div class="sig-line">Principal's Signature</div>
+    </div>
+  </div>
+
+</div></body></html>`;
+  return html;
 }
 // ══════════════════════════════════════════════════════
 // ALL PAGES & THEIR REQUIRED PERMISSIONS
@@ -2441,7 +2668,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
         class:selClass, arm:selArm, session:selSess, term:selTerm,
         ca1:0, ca2:0, exam:0, total:0,
         affectiveTraits:{}, psychomotorSkills:{},
-        teacherComment:"", formMasterComment:"", principalComment:"",
+        teacherComment:"", principalComment:"",
         [field]:val
       };
       newR.total = (newR.ca1||0)+(newR.ca2||0)+(newR.exam||0);
@@ -2609,15 +2836,9 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
   function printReportCard(student){
     var stats = getStudentStats(student.id);
     var meta = getStudentMeta(student.id);
-    var classRemark = getClassRemark(student.class, student.arm||selArm, selSess, selTerm);
     var stuResults = results.filter(function(r){
       return r.studentId===student.id && r.session===selSess && r.term===selTerm && r.class===selClass;
     });
-    var logo = settings&&settings.schoolLogo ? settings.schoolLogo : "";
-    var stamp = settings&&settings.schoolStamp ? settings.schoolStamp : "";
-    var sig = settings&&settings.signature ? settings.signature : "";
-    var totalMax = rc.ca1Max+rc.ca2Max+rc.examMax;
-
     var subjectRows = subjects.map(function(sub){
       var r = stuResults.find(function(x){return x.subject===sub;});
       if(!r) return null;
@@ -2625,195 +2846,14 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
       var pos = getSubjectPosition(student.id, sub);
       var grade = getGrade(r.total||0, settings);
       var weighted = getWeightedScore(r.total||0, stats2.highest);
-      return {sub,r,stats2,pos,grade,weighted};
+      return {sub:sub, ca1:r.ca1, ca2:r.ca2, exam:r.exam, total:r.total, grade:grade, pos:pos,
+        classAvg:stats2.avg, highest:stats2.highest, lowest:stats2.lowest, weighted:weighted};
     }).filter(Boolean);
-
-    var html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Report Card - ${student.surname} ${student.firstname}</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff;}
-  .page{width:210mm;min-height:297mm;padding:8mm;margin:0 auto;}
-  .header{display:flex;align-items:center;gap:10px;border-bottom:3px solid #8B0000;padding-bottom:8px;margin-bottom:8px;}
-  .header img{width:70px;height:70px;object-fit:contain;}
-  .header-text{flex:1;text-align:center;}
-  .school-name{font-size:22px;font-weight:900;color:#8B0000;letter-spacing:1px;}
-  .school-motto{font-size:11px;color:#444;margin:2px 0;}
-  .school-address{font-size:10px;color:#555;}
-  .exam-title{text-align:center;font-size:14px;font-weight:800;margin:6px 0;text-decoration:underline;color:#8B0000;}
-  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;border:1px solid #ccc;padding:6px;}
-  .info-row{display:flex;gap:4px;font-size:10px;}
-  .info-label{font-weight:700;min-width:80px;}
-  .stats-box{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #8B0000;margin-bottom:6px;}
-  .stats-col{padding:4px 6px;}
-  .stats-item{display:flex;justify-content:space-between;font-size:9.5px;padding:1px 0;border-bottom:1px solid #eee;}
-  .stats-item:last-child{border-bottom:none;}
-  .stats-label{color:#333;}
-  .stats-value{font-weight:700;color:#8B0000;}
-  table{width:100%;border-collapse:collapse;margin-bottom:6px;}
-  th{background:#8B0000;color:#fff;padding:4px 3px;font-size:9px;text-align:center;border:1px solid #8B0000;}
-  td{padding:3px;font-size:9px;border:1px solid #ccc;text-align:center;}
-  td.subject-name{text-align:left;font-weight:600;}
-  .grade-A{color:#006600;font-weight:700;}
-  .grade-B{color:#004080;font-weight:700;}
-  .grade-C{color:#806000;font-weight:700;}
-  .grade-D,.grade-E,.grade-F{color:#800000;font-weight:700;}
-  .bottom-section{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;}
-  .affective-box{border:1px solid #8B0000;}
-  .affective-header{background:#8B0000;color:#fff;padding:3px 5px;font-size:9px;font-weight:700;}
-  .affective-row{display:flex;justify-content:space-between;padding:2px 5px;border-bottom:1px solid #eee;font-size:8.5px;}
-  .score-range-box{border:1px solid #8B0000;}
-  .range-row{display:flex;justify-content:space-between;padding:2px 4px;border-bottom:1px solid #eee;font-size:8px;}
-  .key-box{border:1px solid #8B0000;}
-  .key-row{display:flex;gap:4px;padding:2px 4px;border-bottom:1px solid #eee;font-size:8px;}
-  .comment-section{margin-top:6px;}
-  .comment-box{border:1px solid #ccc;padding:4px 6px;min-height:24px;margin-bottom:4px;}
-  .comment-label{font-weight:700;font-size:9px;margin-bottom:2px;}
-  .signature-row{display:flex;justify-content:space-between;margin-top:8px;align-items:flex-end;}
-  .sig-box{text-align:center;min-width:120px;}
-  .sig-line{border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:9px;}
-  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
-</style></head><body><div class="page">
-
-  <div class="header">
-    ${logo ? `<img src="${logo}" alt="Logo"/>` : `<div style="width:70px;height:70px;border:2px solid #8B0000;display:flex;align-items:center;justify-content:center;font-weight:900;color:#8B0000;font-size:18px;">AS</div>`}
-    <div class="header-text">
-      <div class="school-name">ASSANUSIYYAH GROUP OF SCHOOLS</div>
-      <div class="school-motto">Learning, Moral And Religion</div>
-      <div class="school-address">Address: P M B 2002, IPETUMODU ROAD, OKE YIDI, ODEOMU, OSUN STATE.</div>
-      <div class="school-address">Phone No: 08039650771 &nbsp;|&nbsp; Email: safwatuadnan83@gmail.com</div>
-    </div>
-    ${logo ? `<img src="${logo}" alt="Logo"/>` : `<div style="width:70px;height:70px;border:2px solid #8B0000;display:flex;align-items:center;justify-content:center;font-weight:900;color:#8B0000;font-size:18px;">AS</div>`}
-  </div>
-
-  <div class="exam-title">${selTerm.toUpperCase()} EXAMINATION</div>
-
-  <div class="info-grid">
-    <div>
-      <div class="info-row"><span class="info-label">Session:</span><span>${selSess}/${selTerm.replace(" Term","")}</span></div>
-      <div class="info-row"><span class="info-label">Name of student:</span><b>${student.surname} ${student.firstname} ${student.middlename||""}</b></div>
-      <div class="info-row"><span class="info-label">Class:</span><span>${student.class}${student.arm||""}</span></div>
-    </div>
-    <div>
-      <div class="info-row"><span class="info-label">Term:</span><span>${selTerm.replace(" Term","")}</span></div>
-      <div class="info-row"><span class="info-label">Reg. No:</span><span>${student.admissionNo||""}</span></div>
-      <div class="info-row"><span class="info-label">Next term begins:</span><span>${nextTerm||"_______________"}</span></div>
-    </div>
-  </div>
-
-  <div class="stats-box">
-    <div class="stats-col">
-      ${rc.showPosition?`<div class="stats-item"><span class="stats-label">Position in entire class</span><span class="stats-value">${stats ? ordinal(stats.position) : "-"}</span></div>`:""}
-      <div class="stats-item"><span class="stats-label">Overall total score</span><span class="stats-value">${stats ? stats.totalScore : "-"}</span></div>
-      <div class="stats-item"><span class="stats-label">Student's average score</span><span class="stats-value">${stats ? stats.avg : "-"}</span></div>
-      ${rc.showClassAverage?`<div class="stats-item"><span class="stats-label">Highest average in class</span><span class="stats-value">${stats ? stats.classHighest : "-"}</span></div>`:""}
-    </div>
-    <div class="stats-col">
-      <div class="stats-item"><span class="stats-label">No. of students in class</span><span class="stats-value">${classStudents.length}</span></div>
-      ${rc.showClassAverage?`<div class="stats-item"><span class="stats-label">Class average score</span><span class="stats-value">${stats ? stats.classAvg : "-"}</span></div>
-      <div class="stats-item"><span class="stats-label">Lowest average in class</span><span class="stats-value">${stats ? stats.classLowest : "-"}</span></div>`:""}
-      <div class="stats-item"><span class="stats-label">No. of days school opened</span><span class="stats-value">${daysOpened||"-"}</span></div>
-    </div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th style="text-align:left;min-width:100px;">SUBJECT</th>
-        <th>TEST 1<br/>(${rc.ca1Max})</th>
-        <th>TEST 2<br/>(${rc.ca2Max})</th>
-        <th>EXAM<br/>(${rc.examMax})</th>
-        <th>TOTAL<br/>(${totalMax})</th>
-        <th>GRADE</th>
-        ${rc.showPosition?"<th>SUBJECT<br/>POSITION</th>":""}
-        ${rc.showClassAverage?"<th>CLASS<br/>AVERAGE</th><th>WEIGHTED<br/>SCORE</th><th>HIGHEST<br/>IN CLASS</th><th>LOWEST<br/>IN CLASS</th>":""}
-        <th>REMARK</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${subjectRows.map(function(row){
-        var gc = row.grade.grade.startsWith("A")?"grade-A":row.grade.grade.startsWith("B")?"grade-B":row.grade.grade.startsWith("C")?"grade-C":"grade-F";
-        return `<tr>
-          <td class="subject-name">${row.sub}</td>
-          <td>${row.r.ca1||"-"}</td>
-          <td>${row.r.ca2||"-"}</td>
-          <td>${row.r.exam||"-"}</td>
-          <td style="font-weight:700;">${row.r.total||"-"}</td>
-          <td class="${gc}">${row.grade.grade}</td>
-          ${rc.showPosition?`<td>${ordinal(row.pos)}</td>`:""}
-          ${rc.showClassAverage?`<td>${row.stats2.avg}</td><td>${row.weighted}</td><td style="color:#006600;font-weight:700;">${row.stats2.highest}</td><td style="color:#800000;font-weight:700;">${row.stats2.lowest}</td>`:""}
-          <td style="color:${row.r.total>=70?"#006600":row.r.total>=50?"#806000":"#800000"};font-weight:600;">${row.grade.remark}</td>
-        </tr>`;
-      }).join("")}
-    </tbody>
-  </table>
-
-  ${(rc.showAffectiveTraits||rc.showPsychomotorSkills)?`<div class="bottom-section">
-    ${rc.showAffectiveTraits?`<div>
-      <div class="affective-box" style="margin-bottom:4px;">
-        <div class="affective-header">AFFECTIVE TRAITS</div>
-        ${AFFECTIVE_TRAITS.slice(0,8).map(function(t){
-          var rating = (meta.affectiveTraits||{})[t]||"";
-          return `<div class="affective-row"><span>${t}</span><span style="font-weight:700;">${rating}</span></div>`;
-        }).join("")}
-      </div>
-      <div class="affective-box">
-        <div class="affective-header">AFFECTIVE TRAITS (cont.)</div>
-        ${AFFECTIVE_TRAITS.slice(8).map(function(t){
-          var rating = (meta.affectiveTraits||{})[t]||"";
-          return `<div class="affective-row"><span>${t}</span><span style="font-weight:700;">${rating}</span></div>`;
-        }).join("")}
-      </div>
-    </div>`:""}
-    <div>
-      ${rc.showPsychomotorSkills?`<div class="affective-box" style="margin-bottom:4px;">
-        <div class="affective-header">PSYCHOMOTOR SKILLS</div>
-        ${PSYCHOMOTOR_SKILLS.map(function(t){
-          var rating = (meta.psychomotorSkills||{})[t]||"";
-          return `<div class="affective-row"><span>${t}</span><span style="font-weight:700;">${rating}</span></div>`;
-        }).join("")}
-      </div>`:""}
-      <div class="score-range-box">
-        <div class="affective-header">SCORE RANGE</div>
-        ${[["0%-30%","F","Fail"],["30%-40%","E","Poor"],["40%-50%","D","Pass"],["50%-60%","C","Good"],["60%-70%","B","Very good"],["70%-100%","A","Excellent"]].map(function(row){
-          return `<div class="range-row"><span>${row[0]}</span><span style="font-weight:700;">${row[1]}</span><span>${row[2]}</span></div>`;
-        }).join("")}
-      </div>
-    </div>
-    <div>
-      <div class="key-box">
-        <div class="affective-header">KEY &nbsp;&nbsp; MEANING</div>
-        ${RATING_KEY.map(function(k){
-          return `<div class="key-row"><span style="font-weight:700;min-width:12px;">${k.v}</span><span>${k.m}</span></div>`;
-        }).join("")}
-      </div>
-    </div>
-  </div>`:""}
-
-  ${rc.showComments?`<div class="comment-section">
-    <div class="comment-label">Class Teacher's comment:</div>
-    <div class="comment-box">${meta.teacherComment||""}</div>
-    <div class="comment-label">Form Master's report:</div>
-    <div class="comment-box">${meta.formMasterComment||""}</div>
-    <div class="comment-label">Principal's report:</div>
-    <div class="comment-box">${meta.principalComment||""}</div>
-    ${classRemark.teacherRemark?`<div class="comment-label">Class Teacher's General Remark (whole class):</div><div class="comment-box">${classRemark.teacherRemark}</div>`:""}
-    ${classRemark.principalRemark?`<div class="comment-label">Principal's General Remark (whole class):</div><div class="comment-box">${classRemark.principalRemark}</div>`:""}
-  </div>`:""}
-
-  <div class="signature-row">
-    <div class="sig-box">
-      ${stamp ? `<img src="${stamp}" style="height:60px;object-fit:contain;"/>` : `<div style="height:60px;border:1px dashed #ccc;display:flex;align-items:center;justify-content:center;color:#999;font-size:9px;">School Stamp</div>`}
-      <div class="sig-line">School Stamp</div>
-    </div>
-    <div class="sig-box">
-      ${sig ? `<img src="${sig}" style="height:60px;object-fit:contain;"/>` : `<div style="height:60px;border:1px dashed #ccc;display:flex;align-items:center;justify-content:center;color:#999;font-size:9px;">Signature</div>`}
-      <div class="sig-line">Principal's Signature</div>
-    </div>
-  </div>
-
-</div></body></html>`;
-    return html;
+    var fullStats = stats ? Object.assign({}, stats, {classSize:classStudents.length}) : null;
+    return buildReportCardHtml({
+      student:student, settings:settings, rc:rc, term:selTerm, session:selSess,
+      subjectRows:subjectRows, stats:fullStats, meta:meta, nextTerm:nextTerm, daysOpened:daysOpened
+    });
   }
 
   function openPrint(student){
@@ -3119,7 +3159,6 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
 
     var stats = getStudentStats(stu.id);
     var meta = getStudentMeta(stu.id);
-    var classRemark = getClassRemark(stu.class, stu.arm||selArm, selSess, selTerm);
     var stuResults = results.filter(function(r){
       return r.studentId===stu.id && r.session===selSess && r.term===selTerm && r.class===selClass;
     });
@@ -3304,7 +3343,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                 weakSubjects: weakSubjects,
                 studentFirstName: stu.firstname
               };
-              return [["teacherComment","Class Teacher's comment:",isClassTeacherOf(stu.class),"teacher"],["formMasterComment","Form Master's report:",isClassTeacherOf(stu.class),"teacher"],["principalComment","Principal's report:",isPrincipal,"principal"]].map(function(trip){
+              return [["teacherComment","Teacher's Comment:",isClassTeacherOf(stu.class),"teacher"],["principalComment","Principal's Comment:",isPrincipal,"principal"]].map(function(trip){
                 var field=trip[0], label=trip[1], canEdit=trip[2], kind=trip[3];
                 return(
                   <div key={field} style={{marginBottom:4}}>
@@ -3322,8 +3361,6 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                 );
               });
             })()}
-            {classRemark.teacherRemark&&<div style={{marginBottom:4}}><div style={{fontSize:9,fontWeight:700}}>Class Teacher's General Remark (whole class):</div><div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB"}}>{classRemark.teacherRemark}</div></div>}
-            {classRemark.principalRemark&&<div style={{marginBottom:4}}><div style={{fontSize:9,fontWeight:700}}>Principal's General Remark (whole class):</div><div style={{width:"100%",border:"1px solid #eee",borderRadius:3,padding:"3px 5px",fontSize:10,minHeight:28,background:"#F9FAFB"}}>{classRemark.principalRemark}</div></div>}
           </div>}
 
           {/* Signatures */}
@@ -8138,7 +8175,7 @@ function HostelModule({students, staff, settings, currentUser,
 }
 
 
-function ParentPortal({student, students, results, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, exams, gallery, parentToken, onRefresh, onLogout}){
+function ParentPortal({student, students, results, resultStats, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, exams, gallery, parentToken, onRefresh, onLogout}){
   var _tab = useState("home"); var tab = _tab[0]; var setTab = _tab[1];
   var _selSess = useState(CURRENT_SESSION); var selSess = _selSess[0]; var setSelSess = _selSess[1];
   var _selTerm = useState(CURRENT_TERM); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
@@ -8202,6 +8239,42 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
   var termAttendance = childAttendance.filter(function(a){ return a.session===selSess && a.term===selTerm; });
   var childFees = fees.filter(function(f){ return f.studentId === student.id; });
   var termFees = childFees.filter(function(f){ return f.session===selSess && f.term===selTerm; });
+
+  // ── Report card print/download/share — mirrors the staff Results module's
+  // export, using the position/class-average numbers parent-data.js computes
+  // server-side (never another student's raw scores, just aggregates). ──
+  function buildMyReportCardHtml(){
+    var termStats = (resultStats||{})[selSess+"|"+selTerm] || null;
+    var meta = termResults[0] || {};
+    var subjectRows = termResults.map(function(r){
+      var subStat = termStats ? termStats.subjects[r.subject] : null;
+      var grade = getGrade(r.total||0, settings);
+      var weighted = subStat && subStat.highest ? parseFloat(((r.total||0)/subStat.highest*100).toFixed(1)) : 0;
+      return {
+        sub:r.subject, ca1:r.ca1, ca2:r.ca2, exam:r.exam, total:r.total, grade:grade,
+        pos: subStat ? subStat.position : "-",
+        classAvg: subStat ? subStat.avg : "-", highest: subStat ? subStat.highest : "-", lowest: subStat ? subStat.lowest : "-",
+        weighted:weighted
+      };
+    });
+    var stats = termStats ? {
+      totalScore: totalScore, avg: parseFloat(avgScore||0), position: termStats.position,
+      classSize: termStats.classSize, classAvg: termStats.classAvg, classHighest: termStats.classHighest, classLowest: termStats.classLowest
+    } : null;
+    return buildReportCardHtml({student:student, settings:settings, rc:rc, term:selTerm, session:selSess, subjectRows:subjectRows, stats:stats, meta:meta});
+  }
+  function printMyReportCard(){
+    var w = window.open("","_blank");
+    if(w){ w.document.write(buildMyReportCardHtml()); w.document.close(); w.print(); }
+  }
+  async function downloadMyReportCardPDF(){
+    try{ await downloadHtmlDocAsPDF(buildMyReportCardHtml(), student.surname+"_"+student.firstname+"_Report_"+selTerm+"_"+selSess); }
+    catch(e){ alert("Could not generate PDF: "+e.message); }
+  }
+  async function shareMyReportCard(){
+    try{ await shareHtmlDoc(buildMyReportCardHtml(), student.surname+"_"+student.firstname+"_Report_"+selTerm+"_"+selSess, "Report Card — "+student.surname+" "+student.firstname); }
+    catch(e){ alert("Could not share: "+e.message); }
+  }
 
   // ── Attendance stats ──────────────────────────────
   var totalDays = termAttendance.length;
@@ -8335,8 +8408,8 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
           <div style={{width:70,height:70,borderRadius:"50%",overflow:"hidden",border:"3px solid #F0C060",flexShrink:0,background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center"}}>
             {student.passport ? <img src={student.passport} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <span style={{fontSize:28}}>👦</span>}
           </div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:18,fontWeight:900,color:"#F0C060"}}>{student.firstname} {student.surname}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:18,fontWeight:900,color:"#F0C060",overflowWrap:"break-word"}}>{student.firstname} {student.surname}</div>
             <div style={{fontSize:12,opacity:0.85,marginTop:2}}>{student.class}{student.arm} · Admission: {student.admissionNo}</div>
             <div style={{display:"flex",gap:12,marginTop:6,flexWrap:"wrap"}}>
               <span style={{fontSize:11,opacity:0.8}}>📚 {student.boardingType||"Day"} Student</span>
@@ -8431,10 +8504,17 @@ function ParentPortal({student, students, results, attendance, fees, settings, d
           </div>
         ) : (
           <div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+              <button onClick={printMyReportCard} style={S.btn()}>🖨 Print</button>
+              <button onClick={downloadMyReportCardPDF} style={S.btn("blue")}>⬇ Download PDF</button>
+              <button onClick={shareMyReportCard} style={S.btn("gold")}>📤 Share</button>
+            </div>
+
             <div style={S.statsGrid}>
               {[
                 {l:"Average",v:avgScore+"%",bg:"#EFF6FF"},{l:"Highest",v:highest+"%",bg:"#F0FDF4"},
                 {l:"Lowest",v:lowest+"%",bg:"#FEF2F2"},{l:"Passed",v:passed+"/"+termResults.length,bg:"#F5F3FB"},
+                ...((resultStats&&resultStats[selSess+"|"+selTerm]&&resultStats[selSess+"|"+selTerm].position)?[{l:"Position in Class",v:ordinalSuffix(resultStats[selSess+"|"+selTerm].position)+" of "+resultStats[selSess+"|"+selTerm].classSize,bg:"#FFFBEB"}]:[]),
               ].map(function(s,i){return(
                 <div key={i} style={S.statCard(s.bg)}><div style={S.statNum}>{s.v}</div><div style={S.statLabel}>{s.l}</div></div>
               );})}
@@ -10809,7 +10889,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
           class:exam.class, arm:exam.arm, session:exam.session, term:exam.term,
           ca1:0, ca2:0, exam:0, total:0,
           affectiveTraits:{}, psychomotorSkills:{},
-          teacherComment:"", formMasterComment:"", principalComment:""
+          teacherComment:"", principalComment:""
         };
         newR[exam.column] = Math.round(score);
         newR.total = (newR.ca1||0)+(newR.ca2||0)+(newR.exam||0);
@@ -12005,10 +12085,10 @@ function IDCardBack({person, type, settings}){
         <div style={{fontSize:11,lineHeight:1.7,color:"#374151",fontWeight:600,marginBottom:10}}>
           If found, please return to:
         </div>
-        <div style={{background:accentColor,borderRadius:8,padding:"8px 12px",color:"#fff"}}>
-          <div style={{fontSize:11,fontWeight:900,marginBottom:2}}>{SCHOOL_NAME}</div>
-          <div style={{fontSize:9,opacity:0.9,lineHeight:1.5}}>{SCHOOL_ADDRESS}</div>
-          <div style={{fontSize:9,opacity:0.9,marginTop:2}}>Tel: 08039650771</div>
+        <div style={{background:bodyBg,border:"1.5px solid "+accentColor,borderRadius:8,padding:"8px 12px"}}>
+          <div style={{fontSize:11,fontWeight:900,marginBottom:2,color:accentColor}}>{SCHOOL_NAME}</div>
+          <div style={{fontSize:9,color:"#374151",lineHeight:1.5}}>{SCHOOL_ADDRESS}</div>
+          <div style={{fontSize:9,color:"#374151",marginTop:2}}>Tel: 08039650771</div>
         </div>
       </div>
 
@@ -12025,6 +12105,11 @@ function IDCardBack({person, type, settings}){
           ? <img src={settings.schoolStamp} style={{height:40,objectFit:"contain",opacity:0.85}}/>
           : <div style={{height:40,width:40,border:"1px dashed #ccc",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:7,color:"#ccc"}}>STAMP</div>
         }
+      </div>
+
+      {/* Footer bar — matches the front's footer band so both sides read as one card */}
+      <div style={{background:accentColor,padding:"3px 10px",display:"flex",justifyContent:"center",alignItems:"center",marginTop:2}}>
+        <span style={{fontSize:7,color:"rgba(255,255,255,0.7)"}}>Learning · Moral · Religion</span>
       </div>
     </div>
   );
@@ -12079,7 +12164,7 @@ function IDCardsModule({students, staff, settings, currentUser}){
 .photo{width:62px;height:72px;border-radius:6px;overflow:hidden;border:2px solid ${ac};background:#E5E7EB;flex-shrink:0;}
 .footer{background:${ac};padding:3px 10px;display:flex;justify-content:space-between;align-items:center;}
 .back-msg{padding:10px 14px;text-align:center;}
-.return-box{background:${ac};border-radius:8px;padding:8px 12px;color:#fff;}
+.return-box{background:${bg};border:1.5px solid ${ac};border-radius:8px;padding:8px 12px;}
 .sig-row{padding:0 14px 8px;display:flex;justify-content:space-between;align-items:flex-end;}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 @media print{body{background:#fff;padding:5mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style></head>
@@ -12119,14 +12204,17 @@ function IDCardsModule({students, staff, settings, currentUser}){
     <div style="font-size:11px;line-height:1.7;color:#1F2937;font-style:italic;margin-bottom:8px;">The person whose photograph appears on the other side of this card is a ${isStudent?"student":"staff member"} of this school.</div>
     <div style="font-size:11px;line-height:1.7;color:#374151;font-weight:600;margin-bottom:8px;">If found, please return to:</div>
     <div class="return-box">
-      <div style="font-size:11px;font-weight:900;margin-bottom:2px;">${SCHOOL_NAME}</div>
-      <div style="font-size:9px;opacity:0.9;line-height:1.5;">${SCHOOL_ADDRESS}</div>
-      <div style="font-size:9px;opacity:0.9;margin-top:2px;">Tel: 08039650771</div>
+      <div style="font-size:11px;font-weight:900;margin-bottom:2px;color:${ac};">${SCHOOL_NAME}</div>
+      <div style="font-size:9px;color:#374151;line-height:1.5;">${SCHOOL_ADDRESS}</div>
+      <div style="font-size:9px;color:#374151;margin-top:2px;">Tel: 08039650771</div>
     </div>
   </div>
   <div class="sig-row">
     <div style="text-align:center;">${sig}<div style="font-size:7.5px;color:#6B7280;margin-top:2px;">Principal's Signature</div></div>
     ${stamp}
+  </div>
+  <div class="footer" style="justify-content:center;margin-top:2px;">
+    <span style="font-size:7px;color:rgba(255,255,255,0.7);">Learning · Moral · Religion</span>
   </div>
 </div>
 </body></html>`;
@@ -12222,7 +12310,7 @@ export default function App(){
   const [dbStatus,setDbStatus]=useState("loading");
   const [parentStudent,setParentStudent]=useState(null); // set when parent logs in
   const [parentToken,setParentToken]=useState(null); // scoped JWT, needed for CBT exam actions
-  const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[],gallery:[]});
+  const [parentData,setParentData]=useState({results:[],resultStats:{},attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[],gallery:[]});
   const [candidateToken,setCandidateToken]=useState(null);
   const [candidateApp,setCandidateApp]=useState(null);
   const [showNewApplication,setShowNewApplication]=useState(false);
@@ -12437,7 +12525,7 @@ export default function App(){
 
   // Show parent portal if parent logged in
   if(parentStudent){
-    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} lessons={parentData.lessons} assignments={parentData.assignments} submissions={parentData.submissions} exams={parentData.exams} gallery={parentData.gallery} parentToken={parentToken} onRefresh={()=>refreshParentData(parentToken)} onLogout={()=>{setParentStudent(null);setParentToken(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[],gallery:[]});}}/>;
+    return <ParentPortal student={parentStudent} students={[]} results={parentData.results} resultStats={parentData.resultStats} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} lessons={parentData.lessons} assignments={parentData.assignments} submissions={parentData.submissions} exams={parentData.exams} gallery={parentData.gallery} parentToken={parentToken} onRefresh={()=>refreshParentData(parentToken)} onLogout={()=>{setParentStudent(null);setParentToken(null);setParentData({results:[],resultStats:{},attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[],gallery:[]});}}/>;
   }
 
   // Show the admission candidate portal — either filling a brand new
@@ -12466,6 +12554,7 @@ export default function App(){
 
     setParentData({
       results: dataRes.results||[],
+      resultStats: dataRes.resultStats||{},
       attendance: dataRes.attendance||[],
       fees: dataRes.fees||[],
       diary: dataRes.diary||[],
