@@ -10006,9 +10006,8 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
 // Public application form + Admin review & approval
 // Reference number generation, SMS notifications
 // ══════════════════════════════════════════════════════
-function AdmissionsModule({students, setStudents, settings, currentUser}){
+function AdmissionsModule({students, setStudents, settings, currentUser, applications, setApplications}){
   var _tab = useState("applications"); var tab = _tab[0]; var setTab = _tab[1];
-  var _applications = useState([]); var applications = _applications[0]; var setApplications = _applications[1];
   var _search = useState(""); var search = _search[0]; var setSearch = _search[1];
   var _filterStatus = useState(""); var filterStatus = _filterStatus[0]; var setFilterStatus = _filterStatus[1];
   var _viewing = useState(null); var viewing = _viewing[0]; var setViewing = _viewing[1];
@@ -11043,12 +11042,239 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
 }
 
 
-function LoginScreen({settings,onLogin,onParentLogin,gallery}){
+// ══════════════════════════════════════════════════════
+// ADMISSION CANDIDATE PORTAL — public self-service application
+// Fill Form (new/edit), Gallery, School Calendar. Scoped to exactly
+// one application via a candidate token (see candidate-portal.js).
+// ══════════════════════════════════════════════════════
+function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, submitting, onSubmitApplication, onUpdateApplication, onCancel, onLogout}){
+  var _tab = useState("form"); var tab = _tab[0]; var setTab = _tab[1];
+  var _appStep = useState(1); var appStep = _appStep[0]; var setAppStep = _appStep[1];
+
+  var STATES = ["Osun","Lagos","Oyo","Ogun","Ondo","Ekiti","Kwara","Kogi","Abuja FCT","Others"];
+  var HOW_HEARD = ["Word of mouth","Social media","School fair","Mosque/Church","Former student","Billboard","Others"];
+
+  var emptyApp = {
+    surname:"", firstname:"", middlename:"", dob:"", gender:"Male",
+    religion:"Islam", bloodGroup:"O+", genotype:"AA", nationality:"Nigerian",
+    stateOfOrigin:"Osun", lga:"",
+    prevSchool:"", prevClass:"", prevSession:"",
+    parentName:"", parentPhone:"", parentAlt:"", parentEmail:"",
+    parentOccupation:"", parentAddress:"",
+    applyingForClass:"JSS1", entrySession:CURRENT_SESSION,
+    boardingType:"Day", howHeard:"",
+    passport:"", birthCert:false, reportCard:false, testimonial:false,
+    declaration:false
+  };
+  var _form = useState(candidateApp?{...emptyApp,...candidateApp}:emptyApp); var form = _form[0]; var setForm = _form[1];
+  var editable = mode==="new" || (candidateApp&&candidateApp.status==="Pending");
+
+  function submit(){
+    if(!form.surname.trim()||!form.firstname.trim()) return alert("Student name is required.");
+    if(!form.dob) return alert("Date of birth is required.");
+    if(!form.parentName.trim()||!form.parentPhone.trim()) return alert("Parent/Guardian details are required.");
+    if(!form.declaration) return alert("Please confirm the declaration to submit.");
+    if(mode==="new") onSubmitApplication(form);
+    else onUpdateApplication(form);
+  }
+
+  function renderFormSteps(){
+    return(<div>
+      {appStep===1&&(
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:"#230E6A",marginBottom:14}}>Student Information</div>
+          <div style={{...S.formGroup,marginBottom:14}}>
+            <label style={S.label}>Passport Photograph</label>
+            <div style={{display:"flex",gap:12,alignItems:"center"}}>
+              <div style={{width:80,height:80,borderRadius:8,overflow:"hidden",border:"2px solid "+C.border,background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                {form.passport?<img src={form.passport} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<span style={{fontSize:28}}>👤</span>}
+              </div>
+              {editable&&<div>
+                <input type="file" accept="image/*" style={{fontSize:11}} onChange={function(e){var f=e.target.files[0];if(!f)return;if(f.size>41000)return alert("Photo must be under 40KB.");var r=new FileReader();r.onload=function(ev){setForm(function(p){return{...p,passport:ev.target.result};});};r.readAsDataURL(f);}}/>
+                <div style={{fontSize:9,color:C.textMuted,marginTop:4}}>Max 40KB. Clear, frontal photo.</div>
+              </div>}
+            </div>
+          </div>
+          <div style={S.grid2}>
+            <div style={S.formGroup}><label style={S.label}>Surname *</label><input disabled={!editable} style={S.input} value={form.surname} onChange={function(e){setForm(function(p){return{...p,surname:e.target.value};});}} placeholder="Family name"/></div>
+            <div style={S.formGroup}><label style={S.label}>First Name *</label><input disabled={!editable} style={S.input} value={form.firstname} onChange={function(e){setForm(function(p){return{...p,firstname:e.target.value};});}} placeholder="First name"/></div>
+            <div style={S.formGroup}><label style={S.label}>Middle Name</label><input disabled={!editable} style={S.input} value={form.middlename} onChange={function(e){setForm(function(p){return{...p,middlename:e.target.value};});}}/></div>
+            <div style={{...S.formGroup,background:"#FEF3C7",borderRadius:8,padding:"6px 8px",border:"1px solid #F59E0B"}}><label style={{...S.label,color:"#92400E",fontWeight:800}}>📅 Date of Birth *</label><input disabled={!editable} type="date" style={{...S.input,borderColor:"#F59E0B"}} value={form.dob} onChange={function(e){setForm(function(p){return{...p,dob:e.target.value};});}}/></div>
+            <div style={S.formGroup}><label style={S.label}>Gender</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.gender} onChange={function(e){setForm(function(p){return{...p,gender:e.target.value};});}}><option>Male</option><option>Female</option></select></div>
+            <div style={S.formGroup}><label style={S.label}>Religion</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.religion} onChange={function(e){setForm(function(p){return{...p,religion:e.target.value};});}}><option>Islam</option><option>Christianity</option><option>Traditional</option></select></div>
+            <div style={S.formGroup}><label style={S.label}>Blood Group</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.bloodGroup} onChange={function(e){setForm(function(p){return{...p,bloodGroup:e.target.value};});}}>{["O+","O-","A+","A-","B+","B-","AB+","AB-"].map(function(b){return <option key={b}>{b}</option>;})}</select></div>
+            <div style={S.formGroup}><label style={S.label}>Genotype</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.genotype} onChange={function(e){setForm(function(p){return{...p,genotype:e.target.value};});}}>{["AA","AS","AC","SS","SC"].map(function(g){return <option key={g}>{g}</option>;})}</select></div>
+            <div style={S.formGroup}><label style={S.label}>State of Origin</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.stateOfOrigin} onChange={function(e){setForm(function(p){return{...p,stateOfOrigin:e.target.value};});}}>{STATES.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
+            <div style={S.formGroup}><label style={S.label}>L.G.A</label><input disabled={!editable} style={S.input} value={form.lga} onChange={function(e){setForm(function(p){return{...p,lga:e.target.value};});}}/></div>
+          </div>
+          <div style={{marginTop:12}}><label style={S.label}>Previous School</label><input disabled={!editable} style={S.input} value={form.prevSchool} onChange={function(e){setForm(function(p){return{...p,prevSchool:e.target.value};});}} placeholder="Name of last school attended (if any)"/></div>
+        </div>
+      )}
+      {appStep===2&&(
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:"#230E6A",marginBottom:14}}>Parent / Guardian Information</div>
+          <div style={S.grid2}>
+            <div style={S.formGroup}><label style={S.label}>Full Name *</label><input disabled={!editable} style={S.input} value={form.parentName} onChange={function(e){setForm(function(p){return{...p,parentName:e.target.value};});}} placeholder="Parent/Guardian full name"/></div>
+            <div style={S.formGroup}><label style={S.label}>Phone Number *</label><input disabled={!editable} style={S.input} type="tel" value={form.parentPhone} onChange={function(e){setForm(function(p){return{...p,parentPhone:e.target.value};});}} placeholder="08012345678"/></div>
+            <div style={S.formGroup}><label style={S.label}>Alternative Phone</label><input disabled={!editable} style={S.input} type="tel" value={form.parentAlt} onChange={function(e){setForm(function(p){return{...p,parentAlt:e.target.value};});}}/></div>
+            <div style={S.formGroup}><label style={S.label}>Email Address</label><input disabled={!editable} style={S.input} type="email" value={form.parentEmail} onChange={function(e){setForm(function(p){return{...p,parentEmail:e.target.value};});}}/></div>
+            <div style={S.formGroup}><label style={S.label}>Occupation</label><input disabled={!editable} style={S.input} value={form.parentOccupation} onChange={function(e){setForm(function(p){return{...p,parentOccupation:e.target.value};});}}/></div>
+          </div>
+          <div style={S.formGroup}><label style={S.label}>Home Address *</label><textarea disabled={!editable} style={{...S.textarea,minHeight:60}} value={form.parentAddress} onChange={function(e){setForm(function(p){return{...p,parentAddress:e.target.value};});}} placeholder="Full residential address"/></div>
+        </div>
+      )}
+      {appStep===3&&(
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:"#230E6A",marginBottom:14}}>Application Preferences</div>
+          <div style={S.grid2}>
+            <div style={S.formGroup}><label style={S.label}>Applying for Class *</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.applyingForClass} onChange={function(e){setForm(function(p){return{...p,applyingForClass:e.target.value};});}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+            <div style={S.formGroup}><label style={S.label}>Entry Session *</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.entrySession} onChange={function(e){setForm(function(p){return{...p,entrySession:e.target.value};});}}>{SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
+            <div style={S.formGroup}><label style={S.label}>Boarding Type</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.boardingType} onChange={function(e){setForm(function(p){return{...p,boardingType:e.target.value};});}}><option>Day</option><option>Boarder</option></select></div>
+            <div style={S.formGroup}><label style={S.label}>How did you hear about us?</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.howHeard} onChange={function(e){setForm(function(p){return{...p,howHeard:e.target.value};});}}><option value="">— Select —</option>{HOW_HEARD.map(function(h){return <option key={h}>{h}</option>;})}</select></div>
+          </div>
+          <div style={{...S.card,background:"#EFF6FF",marginTop:12}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.primary,marginBottom:10}}>Documents Checklist</div>
+            {[["birthCert","Original Birth Certificate or Sworn Affidavit"],["reportCard","Last School Report Card"],["testimonial","School Testimonial / Transfer Certificate"]].map(function(pair){
+              return <label key={pair[0]} style={{display:"flex",gap:8,alignItems:"center",marginBottom:8,cursor:editable?"pointer":"default",fontSize:12}}>
+                <input disabled={!editable} type="checkbox" checked={form[pair[0]]||false} onChange={function(){setForm(function(p){return{...p,[pair[0]]:!p[pair[0]]};});}}/>
+                {pair[1]}
+              </label>;
+            })}
+          </div>
+        </div>
+      )}
+      {appStep===4&&(
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:"#230E6A",marginBottom:14}}>Declaration &amp; Submission</div>
+          <div style={{...S.card,background:"#F5F3FB",marginBottom:14}}>
+            <div style={{fontSize:12,lineHeight:1.7}}>I, <b>{form.parentName||"____________________"}</b>, hereby declare that all information provided in this application is true and accurate to the best of my knowledge. I understand that the submission of false information may lead to the cancellation of this application or admission.</div>
+          </div>
+          <label style={{display:"flex",gap:8,alignItems:"flex-start",cursor:editable?"pointer":"default",fontSize:12,marginBottom:16}}>
+            <input disabled={!editable} type="checkbox" style={{marginTop:2}} checked={form.declaration||false} onChange={function(){setForm(function(p){return{...p,declaration:!p.declaration};});}}/>
+            <span>I confirm that the above declaration is true and I agree to the school's terms and conditions.</span>
+          </label>
+          <div style={{...S.card,background:"#F0FDF4"}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.success,marginBottom:8}}>Application Summary</div>
+            {[["Student",form.surname+" "+form.firstname],["Date of Birth",form.dob?formatDate(form.dob):"—"],["Applying For",form.applyingForClass+" — "+form.entrySession],["Boarding",form.boardingType],["Parent",form.parentName],["Parent Phone",form.parentPhone]].map(function(pair,i){
+              return <div key={i} style={{display:"flex",gap:8,padding:"3px 0",borderBottom:"1px solid #E5E7EB",fontSize:12}}><span style={{color:C.textMuted,minWidth:100}}>{pair[0]}:</span><b>{pair[1]}</b></div>;
+            })}
+          </div>
+        </div>
+      )}
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:20}}>
+        <button onClick={function(){setAppStep(function(p){return Math.max(1,p-1);});}} style={{...S.btn("secondary"),opacity:appStep===1?0.4:1}} disabled={appStep===1}>← Previous</button>
+        {appStep<4?(
+          <button onClick={function(){setAppStep(function(p){return p+1;});}} style={S.btn()}>Next →</button>
+        ):editable?(
+          <button onClick={submit} disabled={!form.declaration||submitting} style={{...S.btn("green"),opacity:(!form.declaration||submitting)?0.5:1}}>{submitting?"⏳ Submitting...":mode==="new"?"📤 Submit Application":"💾 Save Changes"}</button>
+        ):null}
+      </div>
+    </div>);
+  }
+
+  function renderStatusBanner(){
+    if(!candidateApp) return null;
+    var color = candidateApp.status==="Approved"||candidateApp.status==="Enrolled"?"#059669":candidateApp.status==="Rejected"?"#DC2626":"#D97706";
+    return(
+      <div style={{...S.card,marginBottom:14,borderLeft:"4px solid "+color}}>
+        <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{fontSize:11,color:C.textMuted}}>Reference No.</div>
+            <div style={{fontSize:16,fontWeight:900,color:"#230E6A"}}>{candidateApp.refNo}</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:11,color:C.textMuted}}>Status</div>
+            <span style={S.badge(candidateApp.status==="Approved"||candidateApp.status==="Enrolled"?"green":candidateApp.status==="Rejected"?"red":"yellow")}>{candidateApp.status}</span>
+          </div>
+        </div>
+        {candidateApp.remarks&&<div style={{marginTop:8,background:"#FFF7ED",borderRadius:6,padding:"8px 10px",fontSize:12}}><b>Remarks:</b> {candidateApp.remarks}</div>}
+        {candidateApp.status==="Pending"&&<div style={{marginTop:8,fontSize:11,color:C.textMuted}}>Your application is being reviewed. You can still edit and re-save it below until a decision is made.</div>}
+      </div>
+    );
+  }
+
+  function renderGallery(){
+    return(
+      <div>
+        <div style={{background:"linear-gradient(120deg,#230E6A,#059669)",borderRadius:12,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
+          <div style={{fontSize:16,fontWeight:800}}>🖼 School Gallery</div>
+          <div style={{fontSize:11,opacity:0.8,marginTop:2}}>Take a look at school life before you apply</div>
+        </div>
+        <GalleryModule gallery={gallery||[]} setGallery={function(){}} currentUser={{name:"Applicant"}} readOnly={true}/>
+      </div>
+    );
+  }
+
+  function renderCalendar(){
+    var events = (settings.calendarEvents||[]).slice().sort(function(a,b){return a.date.localeCompare(b.date);});
+    var TYPE_COLOR = {Academic:"#1D4ED8", Exam:"#DC2626", Holiday:"#059669", Event:"#D97706", Others:"#6B7280"};
+    return(
+      <div>
+        <SchoolCalendarWidget settings={settings}/>
+        <div style={S.card}>
+          <div style={S.cardTitle}>Full Academic Calendar</div>
+          {events.length===0?<div style={{color:C.textMuted,fontSize:12,padding:12}}>No calendar events published yet.</div>:events.map(function(e){
+            return(
+              <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid "+C.border}}>
+                <div><div style={{fontSize:13,fontWeight:600}}>{e.title}</div><div style={{fontSize:11,color:C.textMuted}}>{formatDate(e.date)}</div></div>
+                <span style={{background:TYPE_COLOR[e.type]||"#6B7280",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>{e.type}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  var NAV_TABS = [["form",mode==="new"?"📝 Fill Form":"📝 My Application"],["gallery","🖼 Gallery"],["calendar","📅 School Calendar"]];
+
+  return(
+    <div style={{minHeight:"100vh",background:"#F9FAFB",fontFamily:"'Segoe UI',sans-serif"}}>
+      <div style={{background:"linear-gradient(90deg,#230E6A,#3D2496)",padding:"0 20px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56,position:"sticky",top:0,zIndex:100}}>
+        <div>
+          <div style={{fontSize:12,fontWeight:800,color:"#F0C060"}}>{SCHOOL_NAME}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>Admission Applicant Portal</div>
+        </div>
+        <button onClick={mode==="new"?onCancel:onLogout} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:6,color:"#fff",padding:"4px 12px",cursor:"pointer",fontSize:11}}>{mode==="new"?"✕ Cancel":"Logout"}</button>
+      </div>
+
+      <div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"0 20px",display:"flex",gap:0,overflowX:"auto"}}>
+        {NAV_TABS.map(function(pair){
+          var id=pair[0]; var label=pair[1];
+          return <button key={id} onClick={function(){setTab(id);}} style={{background:"none",border:"none",borderBottom:tab===id?"3px solid #230E6A":"3px solid transparent",color:tab===id?"#230E6A":"#6B7280",fontWeight:tab===id?700:400,padding:"14px 16px",cursor:"pointer",fontSize:12,whiteSpace:"nowrap",fontFamily:"inherit"}}>{label}</button>;
+        })}
+      </div>
+
+      <div style={{maxWidth:800,margin:"0 auto",padding:"20px 16px"}}>
+        {tab==="form"&&(
+          <div>
+            {justIssued&&<div style={{...S.card,marginBottom:14,background:"#F0FDF4",border:"2px solid #059669",textAlign:"center",padding:20}}>
+              <div style={{fontSize:28,marginBottom:6}}>🎉</div>
+              <div style={{fontSize:14,fontWeight:800,color:"#059669"}}>Application Submitted!</div>
+              <div style={{display:"flex",gap:20,justifyContent:"center",marginTop:12,flexWrap:"wrap"}}>
+                <div><div style={{fontSize:10,color:C.textMuted}}>REFERENCE NO.</div><div style={{fontSize:18,fontWeight:900,color:"#230E6A"}}>{justIssued.refNo}</div></div>
+                <div><div style={{fontSize:10,color:C.textMuted}}>PIN</div><div style={{fontSize:18,fontWeight:900,color:"#230E6A"}}>{justIssued.pin}</div></div>
+              </div>
+              <div style={{fontSize:11,color:C.textMuted,marginTop:10}}>⚠ Save these — you'll need both to check your application status later. They will not be shown again.</div>
+            </div>}
+            {mode!=="new"&&renderStatusBanner()}
+            <div style={S.card}>{renderFormSteps()}</div>
+          </div>
+        )}
+        {tab==="gallery"&&renderGallery()}
+        {tab==="calendar"&&renderCalendar()}
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({settings,onLogin,onParentLogin,onCandidateLogin,onStartApplication,gallery}){
   const [username,setUsername]=useState("");
   const [password,setPassword]=useState("");
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
-  const [loginType,setLoginType]=useState("staff"); // "staff" | "parent"
+  const [loginType,setLoginType]=useState("staff"); // "staff" | "parent" | "candidate"
+  const [candidateMode,setCandidateMode]=useState("choose"); // "choose" | "login"
   const [slideIndex,setSlideIndex]=useState(0);
 
   // Flatten all gallery photos into one slideshow feed (most recent albums first)
@@ -11092,12 +11318,20 @@ function LoginScreen({settings,onLogin,onParentLogin,gallery}){
         setLoading(false);
         setTimeout(function(){setError("");},4000);
       });
-      } else {
+      } else if(loginType==="parent"){
         // Parent login: admission number + parent phone
         if(onParentLogin){
           setError("Verifying...");
           Promise.resolve(onParentLogin(username.trim(), password.trim())).then(function(result){
             if(!result){setError("Admission number or phone number not found. Check and try again.");setLoading(false);setTimeout(()=>setError(""),5000);}
+          });
+        }
+      } else if(loginType==="candidate"){
+        // Candidate login: application reference number + PIN
+        if(onCandidateLogin){
+          setError("Verifying...");
+          Promise.resolve(onCandidateLogin(username.trim(), password.trim())).then(function(result){
+            if(!result){setError("Invalid reference number or PIN. Check and try again.");setLoading(false);setTimeout(()=>setError(""),5000);}
           });
         }
       }
@@ -11140,33 +11374,60 @@ function LoginScreen({settings,onLogin,onParentLogin,gallery}){
       {/* Login card */}
       <div style={{background:"rgba(255,255,255,0.97)",borderRadius:16,padding:"32px 36px",width:"100%",maxWidth:380,boxShadow:"0 24px 80px rgba(0,0,0,0.5)",border:`1px solid rgba(183,134,44,0.3)`,position:"relative",zIndex:2}}>
         <div style={{textAlign:"center",marginBottom:24}}>
-          <div style={{fontSize:14,fontWeight:800,color:C.primaryDark}}>{loginType==="staff"?"Staff & Admin Login":"Parent Login"}</div>
+          <div style={{fontSize:14,fontWeight:800,color:C.primaryDark}}>{loginType==="staff"?"Staff & Admin Login":loginType==="parent"?"Parent Login":"Admission Applicant"}</div>
           <div style={{fontSize:11,color:C.textMuted,marginTop:3}}>School Information System v3.0</div>
           <div style={{height:2,background:`linear-gradient(90deg,transparent,${C.gold},transparent)`,marginTop:12}}/>
           {/* Login type toggle */}
           <div style={{display:"flex",gap:0,marginTop:14,border:"1px solid "+C.border,borderRadius:8,overflow:"hidden"}}>
-            <button onClick={()=>setLoginType("staff")} style={{flex:1,padding:"8px",background:loginType==="staff"?"#230E6A":"#fff",color:loginType==="staff"?"#fff":"#6B7280",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>👨‍💼 Staff / Admin</button>
-            <button onClick={()=>setLoginType("parent")} style={{flex:1,padding:"8px",background:loginType==="parent"?"#230E6A":"#fff",color:loginType==="parent"?"#fff":"#6B7280",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>👨‍👩‍👧 Parent</button>
+            <button onClick={()=>{setLoginType("staff");setError("");}} style={{flex:1,padding:"8px",background:loginType==="staff"?"#230E6A":"#fff",color:loginType==="staff"?"#fff":"#6B7280",border:"none",cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit"}}>👨‍💼 Staff</button>
+            <button onClick={()=>{setLoginType("parent");setError("");}} style={{flex:1,padding:"8px",background:loginType==="parent"?"#230E6A":"#fff",color:loginType==="parent"?"#fff":"#6B7280",border:"none",cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit"}}>👨‍👩‍👧 Parent</button>
+            <button onClick={()=>{setLoginType("candidate");setCandidateMode("choose");setError("");}} style={{flex:1,padding:"8px",background:loginType==="candidate"?"#230E6A":"#fff",color:loginType==="candidate"?"#fff":"#6B7280",border:"none",cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit"}}>🎓 Apply</button>
           </div>
         </div>
 
-        <div style={S.formGroup}>
-          <label style={S.label}>{loginType==="staff"?"Username":"Child's Admission Number"}</label>
-          <input style={{...S.input,padding:"10px 12px"}} value={username} onChange={e=>setUsername(e.target.value)} placeholder={loginType==="staff"?"Enter your username":"e.g. ASS/2022/0001"} autoFocus/>
-        </div>
-        {loginType==="parent"&&<div style={{background:"#EFF6FF",borderRadius:8,padding:"8px 12px",fontSize:11,color:"#1E40AF",marginBottom:4}}>
-          💡 <b>Admission Number</b> + <b>Parent Phone Number</b> (as registered by school admin)
-        </div>}
-        <div style={S.formGroup}>
-          <label style={S.label}>{loginType==="staff"?"Password":"Your Phone Number (as registered)"}</label>
-          <input style={{...S.input,padding:"10px 12px"}} type={loginType==="staff"?"password":"tel"} value={password} onChange={e=>setPassword(e.target.value)} placeholder={loginType==="staff"?"Enter your password":"e.g. 08012345678"} onKeyDown={e=>e.key==="Enter"&&login()}/>
-        </div>
+        {loginType==="candidate"?(
+          candidateMode==="choose"?(
+            <div>
+              <div style={{fontSize:12,color:C.textMuted,textAlign:"center",marginBottom:16}}>Applying for admission into {SCHOOL_NAME}? Start here.</div>
+              <button style={{...S.btn(),width:"100%",padding:"12px",fontSize:13,marginBottom:10}} onClick={function(){onStartApplication&&onStartApplication();}}>📝 Start New Application</button>
+              <button style={{...S.btn("secondary"),width:"100%",padding:"12px",fontSize:13}} onClick={function(){setCandidateMode("login");setUsername("");setPassword("");}}>🔍 I Already Applied — Check Status</button>
+            </div>
+          ):(
+            <div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Application Reference No.</label>
+                <input style={{...S.input,padding:"10px 12px"}} value={username} onChange={e=>setUsername(e.target.value)} placeholder="e.g. ADM/2026/1001" autoFocus/>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>PIN</label>
+                <input style={{...S.input,padding:"10px 12px"}} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="6-digit PIN" onKeyDown={e=>e.key==="Enter"&&login()}/>
+              </div>
+              {error&&<div style={{background:C.dangerLight,border:`1px solid ${C.danger}`,borderRadius:6,padding:"8px 12px",color:C.danger,fontSize:12,marginBottom:12,textAlign:"center"}}>{error}</div>}
+              <button style={{...S.btn(),width:"100%",padding:"11px",fontSize:13,borderRadius:8,opacity:loading?0.7:1}} onClick={login} disabled={loading}>{loading?"Verifying...":"Check Application →"}</button>
+              <button style={{...S.btn("ghost"),width:"100%",padding:"6px",fontSize:11,marginTop:8}} onClick={function(){setCandidateMode("choose");setError("");}}>← Back</button>
+            </div>
+          )
+        ):(
+          <div>
+            <div style={S.formGroup}>
+              <label style={S.label}>{loginType==="staff"?"Username":"Child's Admission Number"}</label>
+              <input style={{...S.input,padding:"10px 12px"}} value={username} onChange={e=>setUsername(e.target.value)} placeholder={loginType==="staff"?"Enter your username":"e.g. ASS/2022/0001"} autoFocus/>
+            </div>
+            {loginType==="parent"&&<div style={{background:"#EFF6FF",borderRadius:8,padding:"8px 12px",fontSize:11,color:"#1E40AF",marginBottom:4}}>
+              💡 <b>Admission Number</b> + <b>Parent Phone Number</b> (as registered by school admin)
+            </div>}
+            <div style={S.formGroup}>
+              <label style={S.label}>{loginType==="staff"?"Password":"Your Phone Number (as registered)"}</label>
+              <input style={{...S.input,padding:"10px 12px"}} type={loginType==="staff"?"password":"tel"} value={password} onChange={e=>setPassword(e.target.value)} placeholder={loginType==="staff"?"Enter your password":"e.g. 08012345678"} onKeyDown={e=>e.key==="Enter"&&login()}/>
+            </div>
 
-        {error&&<div style={{background:C.dangerLight,border:`1px solid ${C.danger}`,borderRadius:6,padding:"8px 12px",color:C.danger,fontSize:12,marginBottom:12,textAlign:"center"}}>{error}</div>}
+            {error&&<div style={{background:C.dangerLight,border:`1px solid ${C.danger}`,borderRadius:6,padding:"8px 12px",color:C.danger,fontSize:12,marginBottom:12,textAlign:"center"}}>{error}</div>}
 
-        <button style={{...S.btn(),width:"100%",padding:"11px",fontSize:13,borderRadius:8,marginTop:4,opacity:loading?0.7:1}} onClick={login} disabled={loading}>
-          {loading?"Verifying...":"Login →"}
-        </button>
+            <button style={{...S.btn(),width:"100%",padding:"11px",fontSize:13,borderRadius:8,marginTop:4,opacity:loading?0.7:1}} onClick={login} disabled={loading}>
+              {loading?"Verifying...":"Login →"}
+            </button>
+          </div>
+        )}
 
       </div>
 
@@ -11566,6 +11827,11 @@ export default function App(){
   const [parentStudent,setParentStudent]=useState(null); // set when parent logs in
   const [parentToken,setParentToken]=useState(null); // scoped JWT, needed for CBT exam actions
   const [parentData,setParentData]=useState({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[],gallery:[]});
+  const [candidateToken,setCandidateToken]=useState(null);
+  const [candidateApp,setCandidateApp]=useState(null);
+  const [showNewApplication,setShowNewApplication]=useState(false);
+  const [candidateJustIssued,setCandidateJustIssued]=useState(null); // {refNo,pin} shown once right after submitting
+  const [candidateSubmitting,setCandidateSubmitting]=useState(false);
   const isMobile = useIsMobile();
   const [sidebarOpen,setSidebarOpen]=useState(false);
 
@@ -11596,6 +11862,7 @@ export default function App(){
   const [hostelRooms,_setHostelRooms]=useState([]);
   const [hostelRollcall,_setHostelRollcall]=useState([]);
   const [hostelIncidents,_setHostelIncidents]=useState([]);
+  const [applications,_setApplications]=useState([]);
   const [exams,_setExams]=useState(SEED_EXAMS);
   const [examMarks,_setExamMarks]=useState({});
   const [cbtEnabled,setCbtEnabled]=useState(false);
@@ -11629,6 +11896,7 @@ export default function App(){
   const setHostelRooms = makeSynced("hostel_rooms", _setHostelRooms, false);
   const setHostelRollcall = makeSynced("hostel_rollcall", _setHostelRollcall, false);
   const setHostelIncidents = makeSynced("hostel_incidents", _setHostelIncidents, false);
+  const setApplications = makeSynced("admissions", _setApplications, false);
   const setExams       = makeSynced("exams",      _setExams,      false);
   const setExamMarks   = makeSynced("exam_marks", _setExamMarks,  true);
 
@@ -11690,14 +11958,16 @@ export default function App(){
           dbLessons, dbAssignments, dbSubmissions, dbMessages, dbDiary,
           dbElibrary, dbConduct, dbTimetable, dbPromotions, dbClinic,
           dbCounselling, dbExams, dbExamMarks, dbClassRemarks,
-          dbHostelInventory, dbHostelConsumption, dbHostelRequests, dbHostelRooms, dbHostelRollcall, dbHostelIncidents
+          dbHostelInventory, dbHostelConsumption, dbHostelRequests, dbHostelRooms, dbHostelRollcall, dbHostelIncidents,
+          dbApplications
         ] = await Promise.all([
           sbLoad("students"), sbLoad("staff"), sbLoad("attendance"), sbLoad("results"),
           sbLoad("fees"), sbLoad("expenditure"), sbLoad("lessons"), sbLoad("assignments"),
           sbLoad("submissions"), sbLoad("messages"), sbLoad("diary"),
           sbLoad("elibrary"), sbLoad("conduct"), sbLoad("timetable"), sbLoad("promotions"), sbLoad("clinic"),
           sbLoad("counselling"), sbLoad("exams"), sbLoad("exam_marks"), sbLoad("class_remarks"),
-          sbLoad("hostel_inventory"), sbLoad("hostel_consumption"), sbLoad("hostel_requests"), sbLoad("hostel_rooms"), sbLoad("hostel_rollcall"), sbLoad("hostel_incidents")
+          sbLoad("hostel_inventory"), sbLoad("hostel_consumption"), sbLoad("hostel_requests"), sbLoad("hostel_rooms"), sbLoad("hostel_rollcall"), sbLoad("hostel_incidents"),
+          sbLoad("admissions")
         ]);
 
         if(dbStudents && dbStudents.length)      _setStudents(dbStudents);
@@ -11748,6 +12018,8 @@ export default function App(){
         markSynced("hostel_rollcall", dbHostelRollcall);
         if(dbHostelIncidents && dbHostelIncidents.length) _setHostelIncidents(dbHostelIncidents);
         markSynced("hostel_incidents", dbHostelIncidents);
+        if(dbApplications && dbApplications.length) _setApplications(dbApplications);
+        markSynced("admissions", dbApplications);
         if(dbExams && dbExams.length)            _setExams(dbExams);
         markSynced("exams", dbExams);
         if(dbExamMarks && typeof dbExamMarks==="object") _setExamMarks(dbExamMarks);
@@ -11770,6 +12042,17 @@ export default function App(){
   // Show parent portal if parent logged in
   if(parentStudent){
     return <ParentPortal student={parentStudent} students={[]} results={parentData.results} attendance={parentData.attendance} fees={parentData.fees} settings={settings} diary={parentData.diary} elibrary={parentData.elibrary} lessons={parentData.lessons} assignments={parentData.assignments} submissions={parentData.submissions} exams={parentData.exams} gallery={parentData.gallery} parentToken={parentToken} onRefresh={()=>refreshParentData(parentToken)} onLogout={()=>{setParentStudent(null);setParentToken(null);setParentData({results:[],attendance:[],fees:[],diary:[],elibrary:[],lessons:[],assignments:[],submissions:[],exams:[],gallery:[]});}}/>;
+  }
+
+  // Show the admission candidate portal — either filling a brand new
+  // application (not yet submitted) or logged into an existing one.
+  if(showNewApplication && !candidateApp){
+    return <CandidatePortal mode="new" candidateApp={null} justIssued={null} settings={settings} gallery={gallery} submitting={candidateSubmitting}
+      onSubmitApplication={handleCandidateApply} onCancel={()=>setShowNewApplication(false)}/>;
+  }
+  if(candidateApp){
+    return <CandidatePortal mode="portal" candidateApp={candidateApp} justIssued={candidateJustIssued} settings={settings} gallery={gallery} submitting={candidateSubmitting}
+      onUpdateApplication={handleCandidateUpdate} onLogout={handleCandidateLogout}/>;
   }
 
   // Parent credentials (Admission No. + registered phone) are verified
@@ -11819,8 +12102,79 @@ export default function App(){
     }
   }
 
+  function handleStartApplication(){
+    setCandidateApp(null);
+    setCandidateToken(null);
+    setCandidateJustIssued(null);
+    setShowNewApplication(true);
+  }
+
+  async function handleCandidateApply(applicationForm){
+    setCandidateSubmitting(true);
+    try{
+      const res = await fetch("/api/candidate", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"apply", application:applicationForm})
+      }).then(r=>r.json());
+      setCandidateSubmitting(false);
+      if(!res.success){ alert(res.error||"Could not submit application."); return; }
+      setCandidateToken(res.token);
+      setCandidateApp(res.application);
+      setCandidateJustIssued({refNo:res.refNo, pin:res.pin});
+      setShowNewApplication(false);
+    } catch(e){
+      setCandidateSubmitting(false);
+      alert("Could not reach the server: "+e.message);
+    }
+  }
+
+  async function handleCandidateLogin(refNo, pin){
+    try{
+      const res = await fetch("/api/candidate", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"login", refNo, pin})
+      }).then(r=>r.json());
+      if(!res.success||!res.token) return false;
+      setCandidateToken(res.token);
+      setCandidateApp(res.application);
+      setCandidateJustIssued(null);
+      return true;
+    } catch(e){
+      console.error("[CandidateLogin]", e.message);
+      return false;
+    }
+  }
+
+  async function handleCandidateUpdate(applicationForm){
+    if(!candidateToken) return;
+    setCandidateSubmitting(true);
+    try{
+      const res = await fetch("/api/candidate", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+candidateToken},
+        body:JSON.stringify({action:"update", application:applicationForm})
+      }).then(r=>r.json());
+      setCandidateSubmitting(false);
+      if(!res.success){ alert(res.error||"Could not save changes."); return; }
+      setCandidateApp(res.application);
+      alert("Changes saved successfully.");
+    } catch(e){
+      setCandidateSubmitting(false);
+      alert("Could not reach the server: "+e.message);
+    }
+  }
+
+  function handleCandidateLogout(){
+    setCandidateToken(null);
+    setCandidateApp(null);
+    setShowNewApplication(false);
+    setCandidateJustIssued(null);
+  }
+
   // Show login if not authenticated
-  if(!currentUser){return <LoginScreen settings={settings} gallery={gallery} onLogin={(user)=>{setCurrentUser(user);setPage("dashboard");}} onParentLogin={handleParentLogin}/>;}
+  if(!currentUser){return <LoginScreen settings={settings} gallery={gallery} onLogin={(user)=>{setCurrentUser(user);setPage("dashboard");}} onParentLogin={handleParentLogin} onCandidateLogin={handleCandidateLogin} onStartApplication={handleStartApplication}/>;}
 
   const isRoot=currentUser.role==="root";
   const mm_dd=today().slice(5);
@@ -11928,7 +12282,7 @@ export default function App(){
         {page==="payroll"&&(userCanAccess(currentUser,"payroll")?<PayrollModule staff={staff} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="calendar"&&(userCanAccess(currentUser,"calendar")?<CalendarModule students={students} staff={staff} settings={settings} timetable={timetable} lessons={lessons}/>:<AccessDenied/>)}
         {page==="alumni"&&(userCanAccess(currentUser,"alumni")?<AlumniModule students={students} setStudents={setStudents} results={results} settings={settings}/>:<AccessDenied/>)}
-        {page==="admissions"&&(userCanAccess(currentUser,"admissions")?<AdmissionsModule students={students} setStudents={setStudents} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
+        {page==="admissions"&&(userCanAccess(currentUser,"admissions")?<AdmissionsModule students={students} setStudents={setStudents} settings={settings} currentUser={currentUser} applications={applications} setApplications={setApplications}/>:<AccessDenied/>)}
         {page==="exams"&&(userCanAccess(currentUser,"exams")?<ExamModule students={students} results={results} setResults={setResults} settings={settings} currentUser={currentUser} exams={exams} setExams={setExams} examMarks={examMarks} setExamMarks={setExamMarks} cbtEnabled={cbtEnabled} setCbtEnabled={setCbtEnabled}/>:<AccessDenied/>)}
         {page==="settings"&&(userCanAccess(currentUser,"settings")?<SettingsModule settings={settings} setSettings={setSettings} currentUser={currentUser} setCurrentUser={setCurrentUser}/>:<AccessDenied/>)}
       </div>
