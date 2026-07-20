@@ -341,6 +341,42 @@ function getSubjects(cls) { return ["JSS1","JSS2","JSS3"].includes(cls) ? SUBJEC
 function genId() { return Math.random().toString(36).substr(2,9).toUpperCase(); }
 function admNo(yr, seq) { return `ASS/${yr}/${String(seq).padStart(4,"0")}`; }
 function today() { return new Date().toISOString().split("T")[0]; }
+
+// Resizes+re-encodes an uploaded image client-side (canvas → JPEG) before it
+// is base64-embedded and synced to Supabase. Every photo/logo in this app is
+// stored inline in a JSONB row rather than in file storage, and those rows
+// get re-fetched in full on nearly every page/portal load — an uncompressed
+// phone-camera photo (2-8MB) multiplied across a whole gallery or class list
+// is what actually burns through Netlify's function/bandwidth quota. Resizing
+// to a sane max dimension keeps this app's existing storage model but caps
+// the damage per photo. Falls back to the original file if compression fails
+// (e.g. an already-tiny image, or a browser without canvas support).
+function compressImageFile(file, maxDim, quality){
+  maxDim = maxDim || 480;
+  quality = quality || 0.72;
+  return new Promise(function(resolve){
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      var img = new Image();
+      img.onload = function(){
+        try{
+          var scale = Math.min(1, maxDim/Math.max(img.width, img.height));
+          var cw = Math.max(1, Math.round(img.width*scale));
+          var ch = Math.max(1, Math.round(img.height*scale));
+          var canvas = document.createElement("canvas");
+          canvas.width = cw; canvas.height = ch;
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, cw, ch);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        }catch(e){ resolve(ev.target.result); }
+      };
+      img.onerror = function(){ resolve(ev.target.result); };
+      img.src = ev.target.result;
+    };
+    reader.onerror = function(){ resolve(null); };
+    reader.readAsDataURL(file);
+  });
+}
 function formatDate(d) { return d ? new Date(d).toLocaleDateString("en-NG",{day:"2-digit",month:"short",year:"numeric"}) : "—"; }
 // ─── SMS STUB ─────────────────────────────────────────────
 // Replace sendSMS() with real Termii/Twilio API call when backend is ready
@@ -1696,8 +1732,7 @@ function StudentFormModal({open,student,onSave,onClose}){
 
   function handlePassport(e){
     const file=e.target.files[0];if(!file)return;
-    if(file.size>41000)return alert("Passport photo must be under 40KB. Please compress and re-upload.");
-    const reader=new FileReader();reader.onload=ev=>setForm(p=>({...p,passport:ev.target.result}));reader.readAsDataURL(file);
+    compressImageFile(file,300,0.75).then(dataUrl=>{ if(dataUrl) setForm(p=>({...p,passport:dataUrl})); });
   }
 
   function handleSave(){
@@ -4486,10 +4521,8 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
   function uploadFile(e,field){
   const file=e.target.files[0];
   if(!file) return;
-  if(file.size > 200000){ alert("Image too large. Please use an image under 200KB.\nTip: Compress your image at tinypng.com first."); return; }
-  const r=new FileReader();
-  r.onload=function(ev){
-    const dataUrl=ev.target.result;
+  compressImageFile(file,420,0.8).then(function(dataUrl){
+    if(!dataUrl) return;
     // 1. Save to localStorage immediately (fast, works offline)
     try{ localStorage.setItem("asis_"+field, dataUrl); }catch(ex){}
     // 2. Update React state so it shows on screen right away
@@ -4497,8 +4530,7 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
     // 3. Save to Supabase school_assets table
     sbUpsertRow("school_assets", field, {field:field, value:dataUrl}).catch(function(){});
     console.log(field+" uploaded ("+Math.round(dataUrl.length/1024)+"KB)");
-  };
-  r.readAsDataURL(file);
+  });
 }
   function addCalEvent(){if(!calForm.title||!calForm.date)return alert("Title and date required.");setSettingsSafe(p=>({...p,calendarEvents:[...p.calendarEvents,{...calForm,id:genId()}]}));setCalForm({title:"",date:"",type:"Academic"});}
   function removeCalEvent(id){setSettingsSafe(p=>({...p,calendarEvents:p.calendarEvents.filter(e=>e.id!==id)}));}
@@ -6246,6 +6278,15 @@ function ELibraryModule({elibrary, setElibrary, currentUser, students, staff}){
   function handleFileUpload(e){
     var file = e.target.files && e.target.files[0];
     if(!file) return;
+    // PDFs can't be shrunk client-side the way photos can, and every e-library
+    // item gets re-downloaded by every student/parent who opens the Library —
+    // so a hard cap here, pointing large files at the "External Link" option
+    // instead, matters more than for images.
+    if(file.size > 2000000){
+      alert("PDF must be under 2MB (this gets downloaded by every student who opens the Library). For larger documents, use the \"Link (URL)\" option instead and host the file elsewhere (e.g. Google Drive).");
+      e.target.value = "";
+      return;
+    }
     var reader = new FileReader();
     reader.onload = function(ev){ setForm(function(p){return {...p, file:ev.target.result, type:"pdf", url:""};}); };
     reader.readAsDataURL(file);
@@ -6486,11 +6527,13 @@ function GalleryModule({gallery, setGallery, currentUser, readOnly}){
     const files = Array.from(e.target.files||[]);
     files.forEach(file=>{
       if(!file.type.startsWith("image/")) return;
-      const reader = new FileReader();
-      reader.onload = ev => {
-        setPendingPhotos(p=>[...p, { dataUrl: ev.target.result, caption: "" }]);
-      };
-      reader.readAsDataURL(file);
+      // Gallery photos are the biggest bandwidth risk in this app — they're
+      // fetched by every audience (staff, parents, candidates, even the
+      // public login-page slideshow) on nearly every page load, so an
+      // uncompressed multi-MB phone photo gets multiplied many times over.
+      compressImageFile(file,1000,0.75).then(dataUrl=>{
+        if(dataUrl) setPendingPhotos(p=>[...p, { dataUrl: dataUrl, caption: "" }]);
+      });
     });
     e.target.value = "";
   }
@@ -10666,7 +10709,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
                             {appForm.passport?<img src={appForm.passport} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<span style={{fontSize:28}}>👤</span>}
                           </div>
                           <div>
-                            <input type="file" accept="image/*" style={{fontSize:11}} onChange={function(e){var f=e.target.files[0];if(!f)return;if(f.size>41000)return alert("Photo must be under 40KB.");var r=new FileReader();r.onload=function(ev){setAppForm(function(p){return{...p,passport:ev.target.result};});};r.readAsDataURL(f);}}/>
+                            <input type="file" accept="image/*" style={{fontSize:11}} onChange={function(e){var f=e.target.files[0];if(!f)return;compressImageFile(f,300,0.75).then(function(dataUrl){if(dataUrl)setAppForm(function(p){return{...p,passport:dataUrl};});});}}/>
                             <div style={{fontSize:9,color:C.textMuted,marginTop:4}}>Max 40KB. Clear, frontal photo.</div>
                           </div>
                         </div>
@@ -11445,7 +11488,7 @@ function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, sub
                 {form.passport?<img src={form.passport} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<span style={{fontSize:28}}>👤</span>}
               </div>
               {editable&&<div>
-                <input type="file" accept="image/*" style={{fontSize:11}} onChange={function(e){var f=e.target.files[0];if(!f)return;if(f.size>41000)return alert("Photo must be under 40KB.");var r=new FileReader();r.onload=function(ev){setForm(function(p){return{...p,passport:ev.target.result};});};r.readAsDataURL(f);}}/>
+                <input type="file" accept="image/*" style={{fontSize:11}} onChange={function(e){var f=e.target.files[0];if(!f)return;compressImageFile(f,300,0.75).then(function(dataUrl){if(dataUrl)setForm(function(p){return{...p,passport:dataUrl};});});}}/>
                 <div style={{fontSize:9,color:C.textMuted,marginTop:4}}>Max 40KB. Clear, frontal photo.</div>
               </div>}
             </div>
