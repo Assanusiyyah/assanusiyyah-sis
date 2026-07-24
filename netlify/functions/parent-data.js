@@ -20,8 +20,8 @@ function corsHeaders() {
   };
 }
 
-async function fetchTable(sbHeaders, table) {
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id,data&limit=5000`, { headers: sbHeaders });
+async function fetchTable(sbHeaders, table, extraQuery) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id,data&limit=5000${extraQuery || ""}`, { headers: sbHeaders });
   if (!resp.ok) { console.error("[ParentData] fetch failed:", table, resp.status); return []; }
   const rows = await resp.json();
   return Array.isArray(rows) ? rows.map(function(r) { return r.data; }).filter(Boolean) : [];
@@ -65,7 +65,10 @@ exports.handler = async function(event, context) {
       fetchTable(sbHeaders, "exams"),
       fetchTable(sbHeaders, "gallery"),
       fetchTable(sbHeaders, "settings"),
-      fetchTable(sbHeaders, "students")
+      // Only this student's class is needed for the classmate stats below —
+      // pulling the whole school (every other class's students + photos) on
+      // every parent portal load was a major source of wasted bandwidth.
+      fetchTable(sbHeaders, "students", "&data->>class=eq." + encodeURIComponent(studentClass || ""))
     ]);
 
     // A result is visible unless its session/term has been explicitly hidden

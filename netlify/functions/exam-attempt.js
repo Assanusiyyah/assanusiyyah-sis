@@ -29,8 +29,8 @@ function sbHeaders() {
   return { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": "Bearer " + SUPABASE_KEY };
 }
 
-async function fetchTable(table) {
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id,data&limit=5000`, { headers: sbHeaders() });
+async function fetchTable(table, extraQuery) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id,data&limit=5000${extraQuery || ""}`, { headers: sbHeaders() });
   if (!resp.ok) { console.error("[ExamAttempt] fetch failed:", table, resp.status); return []; }
   const rows = await resp.json();
   return Array.isArray(rows) ? rows.map(function(r) { return r.data; }).filter(Boolean) : [];
@@ -99,8 +99,14 @@ exports.handler = async function(event, context) {
       const examId = body.examId;
       if (!examId) return { statusCode: 400, headers, body: JSON.stringify({ error: "examId required" }) };
 
-      const [allAttempts, students] = await Promise.all([fetchTable("exam_attempts"), fetchTable("students")]);
-      const attempts = allAttempts.filter(function(a) { return a.examId === examId; });
+      // Filtering server-side (rather than pulling every attempt/student ever
+      // recorded school-wide) matters a lot here: exam_attempts only grows,
+      // and students carries every student's compressed photo.
+      const attempts = await fetchTable("exam_attempts", "&data->>examId=eq." + encodeURIComponent(examId));
+      const studentIds = Array.from(new Set(attempts.map(function(a) { return a.studentId; }).filter(Boolean)));
+      const students = studentIds.length
+        ? await fetchTable("students", "&id=in.(" + studentIds.map(encodeURIComponent).join(",") + ")")
+        : [];
 
       const enriched = attempts.map(function(a) {
         const stu = students.find(function(s) { return s.id === a.studentId; });
@@ -143,8 +149,10 @@ exports.handler = async function(event, context) {
         return { statusCode: 403, headers, body: JSON.stringify({ error: "This exam is not for your child's class." }) };
       }
 
-      const allAttempts = await fetchTable("exam_attempts");
-      const existing = allAttempts.find(function(a) { return a.examId === examId && a.studentId === studentId && a.isActive; });
+      // Only this student's attempts at this exam are relevant here — no need
+      // to pull every attempt ever made school-wide (exam_attempts only grows).
+      const ownAttempts = await fetchTable("exam_attempts", "&data->>examId=eq." + encodeURIComponent(examId) + "&data->>studentId=eq." + encodeURIComponent(studentId));
+      const existing = ownAttempts.find(function(a) { return a.isActive; });
       if (existing) {
         const examQById = {};
         exam.questions.forEach(function(q) { examQById[q.id] = q; });
@@ -266,12 +274,16 @@ exports.handler = async function(event, context) {
           ? Math.round((objRaw / exam.totalMarks) * colMax * 10) / 10
           : objRaw;
 
-        const student = await fetchRow("students", studentId);
-        const allResults = await fetchTable("results");
-        const existing = allResults.find(function(r) {
-          return r.studentId === studentId && r.subject === exam.subject &&
-            r.session === exam.session && r.term === exam.term && r.class === exam.class;
-        });
+        // Narrow to this one student+subject+term server-side — `results`
+        // accumulates every score for every student across every session,
+        // and the old code pulled the whole thing just to find one row.
+        const ownResults = await fetchTable("results",
+          "&data->>studentId=eq." + encodeURIComponent(studentId) +
+          "&data->>subject=eq." + encodeURIComponent(exam.subject) +
+          "&data->>session=eq." + encodeURIComponent(exam.session) +
+          "&data->>term=eq." + encodeURIComponent(exam.term) +
+          "&data->>class=eq." + encodeURIComponent(exam.class));
+        const existing = ownResults[0];
 
         if (existing) {
           const updated = Object.assign({}, existing, { [exam.column]: Math.round(scaledScore) });

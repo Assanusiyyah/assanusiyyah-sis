@@ -26,11 +26,31 @@ function sbHeaders() {
   return { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": "Bearer " + SUPABASE_KEY };
 }
 
-async function fetchTable(table) {
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id,data&limit=5000`, { headers: sbHeaders() });
+async function fetchTable(table, extraQuery) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id,data&limit=5000${extraQuery || ""}`, { headers: sbHeaders() });
   if (!resp.ok) { console.error("[CandidatePortal] fetch failed:", table, resp.status); return []; }
   const rows = await resp.json();
   return Array.isArray(rows) ? rows.map(function(r) { return r.data; }).filter(Boolean) : [];
+}
+
+// Single-row fetch by id — used once a candidate is authenticated and scoped
+// to exactly one application, so we don't pull every other family's
+// application (photos/documents included) just to find one row.
+async function fetchRow(table, id) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(String(id))}&select=id,data`, { headers: sbHeaders() });
+  if (!resp.ok) return null;
+  const rows = await resp.json();
+  return Array.isArray(rows) && rows[0] ? rows[0].data : null;
+}
+
+// Row count only (no `data` column) — used just to seed the reference-number
+// sequence, so a new application no longer has to download every existing
+// application's full record (photos/documents included) to submit.
+async function countRows(table) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id&limit=5000`, { headers: sbHeaders() });
+  if (!resp.ok) return 0;
+  const rows = await resp.json();
+  return Array.isArray(rows) ? rows.length : 0;
 }
 
 async function upsertRow(table, id, data) {
@@ -95,9 +115,9 @@ exports.handler = async function(event, context) {
       if (!app.parentName || !app.parentPhone) return { statusCode: 400, headers, body: JSON.stringify({ error: "Parent/Guardian details are required." }) };
       if (!app.declaration) return { statusCode: 400, headers, body: JSON.stringify({ error: "Please confirm the declaration to submit." }) };
 
-      const existing = await fetchTable("admissions");
+      const existingCount = await countRows("admissions");
       const session = app.entrySession || "2025/2026";
-      const refNo = genRefNo(session, existing.length);
+      const refNo = genRefNo(session, existingCount);
       const pin = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
 
       const id = crypto.randomUUID();
@@ -126,7 +146,7 @@ exports.handler = async function(event, context) {
         return { statusCode: 429, headers, body: JSON.stringify({ success: false, error: "Too many failed attempts. Try again in " + Math.ceil(lockout.retryAfterSec / 60) + " minute(s)." }) };
       }
 
-      const applications = await fetchTable("admissions");
+      const applications = await fetchTable("admissions", "&data->>refNo=eq." + encodeURIComponent(refNo));
       const match = applications.find(function(a) { return String(a.refNo || "").toUpperCase() === refNo; });
       if (!match || !match.pin || !verifyPassword(pin, match.pin)) {
         await recordFailure(lockKey);
@@ -144,18 +164,16 @@ exports.handler = async function(event, context) {
     const applicationId = auth.payload.applicationId;
 
     if (body.action === "data") {
-      const [applications, gallery, allSettings] = await Promise.all([
-        fetchTable("admissions"), fetchTable("gallery"), fetchTable("settings")
+      const [app, gallery, allSettings] = await Promise.all([
+        fetchRow("admissions", applicationId), fetchTable("gallery"), fetchTable("settings")
       ]);
-      const app = applications.find(function(a) { return a.id === applicationId; });
       if (!app) return { statusCode: 404, headers, body: JSON.stringify({ error: "Application not found" }) };
       const calendarEvents = (allSettings[0] && allSettings[0].calendarEvents) || [];
       return { statusCode: 200, headers, body: JSON.stringify({ application: sanitizeApplication(app), gallery: gallery, calendarEvents: calendarEvents }) };
     }
 
     if (body.action === "update") {
-      const applications = await fetchTable("admissions");
-      const app = applications.find(function(a) { return a.id === applicationId; });
+      const app = await fetchRow("admissions", applicationId);
       if (!app) return { statusCode: 404, headers, body: JSON.stringify({ error: "Application not found" }) };
       if (app.status !== "Pending") return { statusCode: 400, headers, body: JSON.stringify({ error: "This application has already been reviewed and can no longer be edited." }) };
 
