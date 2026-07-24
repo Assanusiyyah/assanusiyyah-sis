@@ -40,6 +40,12 @@ exports.handler = async function(event, context) {
   if (!auth.ok) {
     return { statusCode: auth.statusCode, headers, body: JSON.stringify({ error: auth.error }) };
   }
+  // Staff-only: this proxy sends SMS on the school's paid Termii credits.
+  // Parent/candidate tokens (issued to the public with no vetting) must not
+  // be able to send arbitrary messages to arbitrary numbers on that budget.
+  if (auth.payload.role === "parent" || auth.payload.role === "candidate") {
+    return { statusCode: 403, headers, body: JSON.stringify({ error: "Forbidden" }) };
+  }
 
   if (!TERMII_KEY) {
     return {

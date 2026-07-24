@@ -59,6 +59,12 @@ exports.handler = async function(event, context) {
     if (!auth.ok) {
       return { statusCode: auth.statusCode, headers, body: JSON.stringify({ error: auth.error }) };
     }
+    // Parent and candidate tokens are scoped to exactly one student/application
+    // (see parent-data.js / candidate-portal.js) — they must never reach this
+    // generic proxy, which returns/writes whole tables with no per-row scoping.
+    if (auth.payload.role === "parent" || auth.payload.role === "candidate") {
+      return { statusCode: 403, headers, body: JSON.stringify({ error: "Forbidden" }) };
+    }
   }
 
   const sbHeaders = {

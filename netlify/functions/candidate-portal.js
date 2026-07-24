@@ -5,6 +5,7 @@
 // scoped to exactly one application row and never touches /api/db (which
 // would expose every other family's application).
 const { signToken, requireAuth, hashPassword, verifyPassword } = require("./utils/auth");
+const { checkLockout, recordFailure, recordSuccess } = require("./utils/rateLimit");
 const crypto = require("crypto");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -57,6 +58,24 @@ function sanitizeApplication(app) {
   return clean;
 }
 
+// Every field here ends up interpolated, unescaped, into printed HTML
+// documents (admission letter, school bill, etc.) that staff open in a
+// window sharing their authenticated session — so strip the characters
+// needed to inject a tag/attribute before anything is ever stored.
+function stripTags(v) {
+  return String(v).replace(/[<>]/g, "");
+}
+function deepStripTags(value) {
+  if (typeof value === "string") return stripTags(value);
+  if (Array.isArray(value)) return value.map(deepStripTags);
+  if (value && typeof value === "object") {
+    const out = {};
+    Object.keys(value).forEach(function(k) { out[k] = deepStripTags(value[k]); });
+    return out;
+  }
+  return value;
+}
+
 exports.handler = async function(event, context) {
   const headers = corsHeaders();
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers, body: "" };
@@ -70,7 +89,7 @@ exports.handler = async function(event, context) {
   try {
     // ── Submit a new application — public, no auth ──
     if (body.action === "apply") {
-      const app = body.application || {};
+      const app = deepStripTags(body.application || {});
       if (!app.surname || !app.firstname) return { statusCode: 400, headers, body: JSON.stringify({ error: "Student name is required." }) };
       if (!app.dob) return { statusCode: 400, headers, body: JSON.stringify({ error: "Date of birth is required." }) };
       if (!app.parentName || !app.parentPhone) return { statusCode: 400, headers, body: JSON.stringify({ error: "Parent/Guardian details are required." }) };
@@ -101,11 +120,19 @@ exports.handler = async function(event, context) {
       const pin = String(body.pin || "").trim();
       if (!refNo || !pin) return { statusCode: 400, headers, body: JSON.stringify({ success: false, error: "Reference number and PIN are required." }) };
 
+      const lockKey = "candidate:" + refNo;
+      const lockout = await checkLockout(lockKey);
+      if (lockout.blocked) {
+        return { statusCode: 429, headers, body: JSON.stringify({ success: false, error: "Too many failed attempts. Try again in " + Math.ceil(lockout.retryAfterSec / 60) + " minute(s)." }) };
+      }
+
       const applications = await fetchTable("admissions");
       const match = applications.find(function(a) { return String(a.refNo || "").toUpperCase() === refNo; });
       if (!match || !match.pin || !verifyPassword(pin, match.pin)) {
+        await recordFailure(lockKey);
         return { statusCode: 200, headers, body: JSON.stringify({ success: false, error: "Invalid reference number or PIN." }) };
       }
+      await recordSuccess(lockKey);
 
       const token = signToken({ role: "candidate", applicationId: match.id }, 30 * 24 * 3600);
       return { statusCode: 200, headers, body: JSON.stringify({ success: true, token: token, application: sanitizeApplication(match) }) };
@@ -132,8 +159,13 @@ exports.handler = async function(event, context) {
       if (!app) return { statusCode: 404, headers, body: JSON.stringify({ error: "Application not found" }) };
       if (app.status !== "Pending") return { statusCode: 400, headers, body: JSON.stringify({ error: "This application has already been reviewed and can no longer be edited." }) };
 
-      const updates = body.application || {};
-      const merged = Object.assign({}, app, updates, { id: app.id, refNo: app.refNo, pin: app.pin, status: app.status });
+      const updates = deepStripTags(body.application || {});
+      const merged = Object.assign({}, app, updates, {
+        id: app.id, refNo: app.refNo, pin: app.pin, status: app.status,
+        // Staff-only fields set through the admin review flow — a candidate's
+        // own "update" call must never be able to forge these.
+        admissionNo: app.admissionNo, reviewedBy: app.reviewedBy, reviewedAt: app.reviewedAt, remarks: app.remarks
+      });
       const saveResult = await upsertRow("admissions", app.id, merged);
       if (!saveResult.ok) return { statusCode: 500, headers, body: JSON.stringify({ error: "Could not save changes: " + saveResult.error }) };
       return { statusCode: 200, headers, body: JSON.stringify({ success: true, application: sanitizeApplication(merged) }) };

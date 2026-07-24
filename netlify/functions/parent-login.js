@@ -5,6 +5,7 @@
 // tables, which would leak every other family's grades/fees/health data.
 // Use /api/parent-data (with this token) to fetch just this child's rows.
 const { signToken } = require("./utils/auth");
+const { checkLockout, recordFailure, recordSuccess } = require("./utils/rateLimit");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
@@ -43,6 +44,12 @@ exports.handler = async function(event, context) {
     return { statusCode: 500, headers, body: JSON.stringify({ success: false, error: "Database not configured." }) };
   }
 
+  const lockKey = "parent:" + String(admissionNo).trim().toLowerCase();
+  const lockout = await checkLockout(lockKey);
+  if (lockout.blocked) {
+    return { statusCode: 429, headers, body: JSON.stringify({ success: false, error: "Too many failed attempts. Try again in " + Math.ceil(lockout.retryAfterSec / 60) + " minute(s)." }) };
+  }
+
   const sbHeaders = {
     "Content-Type": "application/json",
     "apikey": SUPABASE_KEY,
@@ -68,6 +75,7 @@ exports.handler = async function(event, context) {
     });
 
     if (!match) {
+      await recordFailure(lockKey);
       console.log("[ParentLogin] FAILED for:", admissionNo);
       return { statusCode: 200, headers, body: JSON.stringify({ success: false, error: "Invalid Admission Number or Phone Number" }) };
     }
@@ -77,6 +85,7 @@ exports.handler = async function(event, context) {
       return { statusCode: 200, headers, body: JSON.stringify({ success: false, error: "This student's record is inactive. Please contact the school." }) };
     }
 
+    await recordSuccess(lockKey);
     const token = signToken({ role: "parent", studentId: student.id, studentClass: student.class, studentArm: student.arm }, 12 * 3600);
 
     console.log("[ParentLogin] SUCCESS for:", admissionNo);

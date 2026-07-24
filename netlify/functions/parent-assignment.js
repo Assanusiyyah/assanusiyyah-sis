@@ -64,7 +64,10 @@ exports.handler = async function(event, context) {
   if (body.action !== "submit") return { statusCode: 400, headers, body: JSON.stringify({ error: "Unknown action" }) };
 
   const assignmentId = body.assignmentId;
-  const content = String(body.content || "").trim();
+  // Strip angle brackets so a submitted answer can never carry an HTML tag —
+  // matches the same hardening in candidate-portal.js for the other public/
+  // parent-writable free-text field in this app.
+  const content = String(body.content || "").trim().replace(/[<>]/g, "");
   if (!assignmentId) return { statusCode: 400, headers, body: JSON.stringify({ error: "assignmentId required" }) };
   if (!content) return { statusCode: 400, headers, body: JSON.stringify({ error: "Please write an answer before submitting." }) };
 

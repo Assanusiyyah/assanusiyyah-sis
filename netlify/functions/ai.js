@@ -23,6 +23,12 @@ exports.handler = async function(event, context) {
   if (!auth.ok) {
     return { statusCode: auth.statusCode, headers, body: JSON.stringify({ error: auth.error }) };
   }
+  // Staff-only: this proxy calls a paid API on the school's own key. Parent/
+  // candidate tokens (issued to the public with no vetting) must not be able
+  // to run up usage on it.
+  if (auth.payload.role === "parent" || auth.payload.role === "candidate") {
+    return { statusCode: 403, headers, body: JSON.stringify({ error: "Forbidden" }) };
+  }
 
   let body;
   try { body = JSON.parse(event.body); }

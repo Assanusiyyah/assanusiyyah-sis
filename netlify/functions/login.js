@@ -1,5 +1,10 @@
 // Dedicated login endpoint — checks admins_list table directly, issues a signed session token.
 const { signToken, verifyPassword, isHashed, hashPassword } = require("./utils/auth");
+const { checkLockout, recordFailure, recordSuccess } = require("./utils/rateLimit");
+
+// A stable dummy hash so a no-such-username lookup pays the same scrypt cost
+// as a real one below — otherwise response timing leaks which usernames exist.
+const DUMMY_HASH = "scrypt$" + "00".repeat(16) + "$" + "00".repeat(64);
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
@@ -33,6 +38,12 @@ exports.handler = async function(event, context) {
     return { statusCode: 500, headers, body: JSON.stringify({ success: false, error: "Database not configured." }) };
   }
 
+  const lockKey = "admin:" + String(username).trim().toLowerCase();
+  const lockout = await checkLockout(lockKey);
+  if (lockout.blocked) {
+    return { statusCode: 429, headers, body: JSON.stringify({ success: false, error: "Too many failed attempts. Try again in " + Math.ceil(lockout.retryAfterSec / 60) + " minute(s)." }) };
+  }
+
   const sbHeaders = {
     "Content-Type": "application/json",
     "apikey": SUPABASE_KEY,
@@ -55,13 +66,13 @@ exports.handler = async function(event, context) {
     const rows = await resp.json();
 
     // Find matching admin — supports both hashed ("scrypt$...") and legacy plaintext passwords.
-    const match = rows.find(function(row) {
-      const a = row.data;
-      if (!a || a.username !== username) return false;
-      return isHashed(a.password) ? verifyPassword(password, a.password) : a.password === password;
-    });
+    const found = rows.find(function(row) { return row.data && row.data.username === username; });
+    const match = (found && (isHashed(found.data.password) ? verifyPassword(password, found.data.password) : found.data.password === password))
+      ? found : null;
 
     if (!match) {
+      if (!found || !isHashed(found.data.password)) verifyPassword(password, DUMMY_HASH); // pay the same scrypt cost either way
+      await recordFailure(lockKey);
       console.log("[Login] FAILED for:", username);
       return { statusCode: 200, headers, body: JSON.stringify({ success: false, error: "Invalid credentials" }) };
     }
@@ -70,6 +81,7 @@ exports.handler = async function(event, context) {
     if (admin.active === false) {
       return { statusCode: 200, headers, body: JSON.stringify({ success: false, error: "Account deactivated" }) };
     }
+    await recordSuccess(lockKey);
 
     // Lazy migration: a matching plaintext password means credentials were correct —
     // rehash and store now so this row never needs a plaintext compare again.
