@@ -59,10 +59,12 @@ exports.handler = async function(event, context) {
     if (!auth.ok) {
       return { statusCode: auth.statusCode, headers, body: JSON.stringify({ error: auth.error }) };
     }
-    // Parent and candidate tokens are scoped to exactly one student/application
-    // (see parent-data.js / candidate-portal.js) — they must never reach this
-    // generic proxy, which returns/writes whole tables with no per-row scoping.
-    if (auth.payload.role === "parent" || auth.payload.role === "candidate") {
+    // Parent, candidate, and staff tokens are all scoped (one student/
+    // application, or one staff member's own subjects/classes — see
+    // parent-data.js / candidate-portal.js / staff-data.js) — they must never
+    // reach this generic proxy, which returns/writes whole tables with no
+    // per-row scoping.
+    if (auth.payload.role === "parent" || auth.payload.role === "candidate" || auth.payload.role === "staff") {
       return { statusCode: 403, headers, body: JSON.stringify({ error: "Forbidden" }) };
     }
   }

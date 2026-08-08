@@ -30,6 +30,21 @@ function getAuthToken(){
   try{ _authToken = sessionStorage.getItem("asis_token") || null; }catch(e){}
   return _authToken;
 }
+
+// A "staff" session (see staff-login.js) is walled off from /api/db — dbCall
+// routes it to /api/staff-data instead, so every existing setStudents/
+// setResults/setLessons/... call site keeps working unchanged, just scoped
+// server-side to the logged-in staff member's own subjects/classes.
+let _sessionRole = null;
+function setSessionRole(role){
+  _sessionRole = role;
+  try{ if(role) sessionStorage.setItem("asis_role", role); else sessionStorage.removeItem("asis_role"); }catch(e){}
+}
+function getSessionRole(){
+  if(_sessionRole) return _sessionRole;
+  try{ _sessionRole = sessionStorage.getItem("asis_role") || null; }catch(e){}
+  return _sessionRole;
+}
 function authFetchHeaders(){
   const h = {"Content-Type":"application/json"};
   const token = getAuthToken();
@@ -40,7 +55,8 @@ function authFetchHeaders(){
 // ── Proxy helpers ───────────────────────────────────
 async function dbCall(body){
   try {
-    const res = await fetch("/api/db", {
+    const endpoint = getSessionRole()==="staff" ? "/api/staff-data" : "/api/db";
+    const res = await fetch(endpoint, {
       method:"POST",
       headers: authFetchHeaders(),
       body: JSON.stringify(body)
@@ -88,6 +104,17 @@ async function sbUpsertMany(table, items){
 // Tables stored as a single "singleton" row (like settings) rather than one
 // row per item — sbLoad unwraps these to the row's data instead of an array.
 const SINGLETON_TABLES = ["settings","exam_marks"];
+
+// Tables a staff session's /api/staff-data can actually return (kept in sync
+// with READABLE_TABLES in staff-data.js) — everything else would come back
+// empty and, worse, trip sbLoad's "table looked empty, reseed it" fallback on
+// every single staff page load, wastefully attempting (and being correctly
+// rejected for) a demo-data UPSERT_MANY. Skip those tables outright instead.
+const STAFF_READABLE_TABLES = ["students","staff","results","lessons","assignments","submissions","diary","elibrary","gallery","exams","exam_marks","settings","timetable"];
+function loadIfAllowed(table){
+  if(getSessionRole()==="staff" && STAFF_READABLE_TABLES.indexOf(table)===-1) return Promise.resolve([]);
+  return sbLoad(table);
+}
 
 async function sbLoad(table){
   const rows = await sbSelect(table);
@@ -276,7 +303,7 @@ function SchoolCalendarWidget({settings}){
       <div>
         <div style={{fontSize:22,fontWeight:900,fontVariantNumeric:"tabular-nums",color:"#F0C060"}}>{timeStr}</div>
         <div style={{fontSize:11,opacity:0.85,marginTop:2}}>{dateStr}</div>
-        <div style={{fontSize:11,opacity:0.7,marginTop:2}}>{CURRENT_SESSION} · {CURRENT_TERM}</div>
+        <div style={{fontSize:11,opacity:0.7,marginTop:2}}>{getCurrentSession()} · {getCurrentTerm()}</div>
       </div>
       {next ? (
         <div style={{textAlign:"right"}}>
@@ -329,8 +356,25 @@ const CLASSES = ["JSS1","JSS2","JSS3","SS1","SS2","SS3"];
 const ARMS = ["A","B","C"];
 const TERMS = ["First Term","Second Term","Third Term"];
 const SESSIONS = ["2022/2023","2023/2024","2024/2025","2025/2026"];
+// Fallback/seed-data-only defaults — everything else in the app that needs
+// "what session/term is it right now" should call getCurrentSession()/
+// getCurrentTerm() below instead, which reflect the root-admin-editable
+// settings.currentSession/currentTerm (see SettingsModule's "general" tab).
 const CURRENT_SESSION = "2025/2026";
 const CURRENT_TERM = "Third Term";
+
+// Kept in sync with settings.currentSession/currentTerm by a useEffect in
+// App() (fires on every settings change). Plain module-level variables
+// rather than React state so any function — including ones outside the
+// component tree, like SMS_TEMPLATES below — can read the live value
+// without needing settings threaded in as a prop. Safe to read from inside
+// a render: every module component here is an unmemoized function that gets
+// fully re-invoked whenever App() re-renders (settings changing re-renders
+// App()), so the next render always sees the fresh value.
+let _liveSession = CURRENT_SESSION;
+let _liveTerm = CURRENT_TERM;
+function getCurrentSession(){ return _liveSession; }
+function getCurrentTerm(){ return _liveTerm; }
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
 const PERIODS = [1,2,3,4,5,6,7,8];
 
@@ -341,6 +385,19 @@ function getSubjects(cls) { return ["JSS1","JSS2","JSS3"].includes(cls) ? SUBJEC
 function genId() { return Math.random().toString(36).substr(2,9).toUpperCase(); }
 function admNo(yr, seq) { return `ASS/${yr}/${String(seq).padStart(4,"0")}`; }
 function today() { return new Date().toISOString().split("T")[0]; }
+
+// Resolves the staff-roster record for the logged-in user. Staff-role
+// sessions (see staff-login.js) carry a real staffId in their token, so that
+// is checked first; admins_list-backed accounts (root/Admin/Teacher/...) have
+// no such link, so they fall back to matching on full name, same as before.
+function findMyStaffRecord(staff, currentUser){
+  if(!currentUser) return null;
+  if(currentUser.staffId){
+    var byId = (staff||[]).find(function(s){ return s.id===currentUser.staffId; });
+    if(byId) return byId;
+  }
+  return (staff||[]).find(function(s){ return (s.surname+" "+s.firstname).toLowerCase()===String(currentUser.name||"").toLowerCase(); });
+}
 
 // Resizes+re-encodes an uploaded image client-side (canvas → JPEG) before it
 // is base64-embedded and synced to Supabase. Every photo/logo in this app is
@@ -425,19 +482,19 @@ async function sendBulkSMS(contacts, message, label){
 }
 
 const SMS_TEMPLATES = {
-  feeReceipt:   function(name,amount,balance){ return "Dear Parent of "+name+", payment of N"+amount+" received for "+CURRENT_TERM+" "+CURRENT_SESSION+". Balance: N"+balance+". Thank you. - "+SCHOOL_NAME; },
-  feeReminder:  function(name,amount){ return "Dear Parent of "+name+", your ward has an outstanding fee balance of N"+amount+" for "+CURRENT_TERM+". Kindly pay to avoid disruption. - "+SCHOOL_NAME; },
+  feeReceipt:   function(name,amount,balance){ return "Dear Parent of "+name+", payment of N"+amount+" received for "+getCurrentTerm()+" "+getCurrentSession()+". Balance: N"+balance+". Thank you. - "+SCHOOL_NAME; },
+  feeReminder:  function(name,amount){ return "Dear Parent of "+name+", your ward has an outstanding fee balance of N"+amount+" for "+getCurrentTerm()+". Kindly pay to avoid disruption. - "+SCHOOL_NAME; },
   absenceAlert: function(name,date){ return "Dear Parent, "+name+" was absent from school on "+date+". Please contact us if this was unplanned. - "+SCHOOL_NAME; },
   resultReady:  function(name,term){ return "Dear Parent of "+name+", "+term+" results are now available. Log in to the school portal to view. - "+SCHOOL_NAME; },
   birthday:     function(name){ return "Happy Birthday "+name+"! Wishing you a wonderful day filled with joy and success. From all of us at "+SCHOOL_NAME+"."; },
   announcement: function(msg){ return msg+" - "+SCHOOL_NAME; },
-  clearance:    function(name){ return "Dear Parent of "+name+", all fees for "+CURRENT_TERM+" "+CURRENT_SESSION+" are fully paid. Thank you for your prompt payment. - "+SCHOOL_NAME; },
+  clearance:    function(name){ return "Dear Parent of "+name+", all fees for "+getCurrentTerm()+" "+getCurrentSession()+" are fully paid. Thank you for your prompt payment. - "+SCHOOL_NAME; },
 };
 
 async function notifyResultsPublished(students,term){
   var contacts = students.filter(function(s){return s.active&&s.parentPhone;})
     .map(function(s){return {phone:s.parentPhone,name:s.firstname+" "+s.surname};});
-  return sendBulkSMS(contacts, SMS_TEMPLATES.resultReady("{name}",term||CURRENT_TERM), "Results Published");
+  return sendBulkSMS(contacts, SMS_TEMPLATES.resultReady("{name}",term||getCurrentTerm()), "Results Published");
 }
 
 // ─── SEED DATA ────────────────────────────────────────────
@@ -610,6 +667,13 @@ const SEED_SETTINGS = {
   schoolLogo: "",
   schoolStamp: "",
   signature: "",
+  // Root-admin-editable "what session/term is it right now" — drives new-
+  // record defaults, dashboards, and reports across the whole app (see
+  // SettingsModule's "general" tab). Defaults to the CURRENT_SESSION/
+  // CURRENT_TERM constants so an existing deployment behaves identically
+  // until root explicitly changes it from Settings.
+  currentSession: CURRENT_SESSION,
+  currentTerm: CURRENT_TERM,
   calendarEvents: [
     {id:"CAL001",title:"Third Term Begins",date:"2026-01-08",type:"Academic"},
     {id:"CAL002",title:"Mid-Term Break",date:"2026-03-10",type:"Holiday"},
@@ -1042,7 +1106,7 @@ const MODULE_COLORS = {
 function DashboardHome({students,results,fees,attendance,staff,settings,currentUser,onNavigate}){
   const active=students.filter(s=>s.active);
   const tb=fees.reduce((a,f)=>a+f.amount,0),tp=fees.reduce((a,f)=>a+f.amountPaid,0);
-  const curR=results.filter(r=>r.session===CURRENT_SESSION&&r.term===CURRENT_TERM);
+  const curR=results.filter(r=>r.session===getCurrentSession()&&r.term===getCurrentTerm());
   const avg=curR.length?(curR.reduce((a,r)=>a+r.total,0)/curR.length).toFixed(1):"—";
   const mm_dd=today().slice(5);
   const bday_s=students.filter(s=>s.active&&s.dob&&s.dob.slice(5)===mm_dd);
@@ -1080,7 +1144,7 @@ function DashboardHome({students,results,fees,attendance,staff,settings,currentU
         <div style={{color:"rgba(255,255,255,0.6)",fontSize:10}}>Welcome,</div>
         <div style={{color:C.goldLight,fontWeight:700,fontSize:13}}>{currentUser.name}</div>
         <div style={{...S.badge(currentUser.role==="root"?"gold":"blue"),marginTop:4,fontSize:10}}>{currentUser.role==="root"?"🔑 Root Admin":currentUser.role}</div>
-        <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginTop:4}}>{CURRENT_SESSION} · {CURRENT_TERM}</div>
+        <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginTop:4}}>{getCurrentSession()} · {getCurrentTerm()}</div>
       </div>
     </div>
 
@@ -1094,6 +1158,14 @@ function DashboardHome({students,results,fees,attendance,staff,settings,currentU
           <div style={{fontSize:12,color:C.textMuted,marginTop:2}}>{[...bday_s.map(s=>`${s.firstname} ${s.surname} (Student − ${s.class}${s.arm})`), ...bday_t.map(s=>`${s.firstname} ${s.surname} (Staff)`)].join(" · ")}</div>
         </div>
       </div>
+    </div>}
+
+    {/* General school info (rules/notices set by root in Settings) — most
+        relevant to staff-role users who don't have a Settings page of their
+        own to read it from. */}
+    {settings.generalInfo&&String(settings.generalInfo).trim()&&<div style={{...S.card,background:C.ivory,border:`1px solid ${C.border}`,marginBottom:16}}>
+      <div style={{fontWeight:700,color:C.primaryDark,fontSize:12,marginBottom:5}}>ℹ️ School Information</div>
+      <div style={{fontSize:12,color:C.text,whiteSpace:"pre-wrap"}}>{settings.generalInfo}</div>
     </div>}
 
     {/* Quick stats */}
@@ -1484,9 +1556,9 @@ function AnalyticsModule({students, attendance, results, settings}){
   var tab = _tab[0]; var setTab = _tab[1];
   var _sc = useState("JSS1");
   var selClass = _sc[0]; var setSelClass = _sc[1];
-  var _ss = useState(CURRENT_SESSION);
+  var _ss = useState(getCurrentSession());
   var selSess = _ss[0]; var setSelSess = _ss[1];
-  var _st = useState(CURRENT_TERM);
+  var _st = useState(getCurrentTerm());
   var selTerm = _st[0]; var setSelTerm = _st[1];
 
   var NAVY="#230E6A"; var BRONZE="#6B491B"; var BLUE="#1D4ED8";
@@ -1722,7 +1794,7 @@ function AnalyticsModule({students, attendance, results, settings}){
 // Isolated from StudentsModule's table so typing in this form never
 // re-renders the (potentially large, photo-heavy) student table below it.
 function StudentFormModal({open,student,onSave,onClose}){
-  const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",class:"JSS1",arm:"A",entryClass:"JSS1",entrySession:CURRENT_SESSION,parentName:"",parentPhone:"",parentEmail:"",address:"",religion:"Islam",bloodGroup:"O+",genotype:"AA",boardingType:"Day",phone:"",passport:"",active:true,examExtraMinutes:0};
+  const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",class:"JSS1",arm:"A",entryClass:"JSS1",entrySession:getCurrentSession(),parentName:"",parentPhone:"",parentEmail:"",address:"",religion:"Islam",bloodGroup:"O+",genotype:"AA",boardingType:"Day",phone:"",passport:"",active:true,examExtraMinutes:0};
   const [form,setForm]=useState(student?{...student}:ef);
   const passRef=useRef();
 
@@ -1782,7 +1854,7 @@ function StudentsModule({students,setStudents}){
   // Bulk enrolment state
   const [bulkClass,setBulkClass]=useState("JSS1");
   const [bulkArm,setBulkArm]=useState("A");
-  const [bulkSession,setBulkSession]=useState(CURRENT_SESSION);
+  const [bulkSession,setBulkSession]=useState(getCurrentSession());
   const [bulkRows,setBulkRows]=useState(
     Array.from({length:15},function(_,i){return{id:"row"+i,surname:"",firstname:"",middlename:"",gender:"Male",dob:"",parentName:"",parentPhone:"",bloodGroup:"O+",genotype:"AA",religion:"Islam",boardingType:"Day"};})
   );
@@ -1969,8 +2041,8 @@ function StudentsModule({students,setStudents}){
 function AttendanceModule({students,attendance,setAttendance,settings}){
   const [selCls,setSelCls]=useState("JSS1");
   const [selDate,setSelDate]=useState(today());
-  const [selSess,setSelSess]=useState(CURRENT_SESSION);
-  const [selTerm,setSelTerm]=useState(CURRENT_TERM);
+  const [selSess,setSelSess]=useState(getCurrentSession());
+  const [selTerm,setSelTerm]=useState(getCurrentTerm());
   const [tab,setTab]=useState("daily");
 
   const classStudents=students.filter(s=>s.active&&s.class===selCls).sort((a,b)=>a.surname.localeCompare(b.surname));
@@ -2128,14 +2200,14 @@ function AttendanceModule({students,attendance,setAttendance,settings}){
 // ══════════════════════════════════════════════════════
 function FeesModule({students,fees,setFees,expenditure,setExpenditure,settings,currentUser}){
   var _tab = useState("fees"); var tab = _tab[0]; var setTab = _tab[1];
-  var _fSess = useState(CURRENT_SESSION); var fSess = _fSess[0]; var setFSess = _fSess[1];
-  var _fTerm = useState(CURRENT_TERM); var fTerm = _fTerm[0]; var setFTerm = _fTerm[1];
+  var _fSess = useState(getCurrentSession()); var fSess = _fSess[0]; var setFSess = _fSess[1];
+  var _fTerm = useState(getCurrentTerm()); var fTerm = _fTerm[0]; var setFTerm = _fTerm[1];
   var _fCls = useState(""); var fCls = _fCls[0]; var setFCls = _fCls[1];
   var _fStu = useState(""); var fStu = _fStu[0]; var setFStu = _fStu[1];
   var _showForm = useState(false); var showForm = _showForm[0]; var setShowForm = _showForm[1];
   var _showExp = useState(false); var showExp = _showExp[0]; var setShowExp = _showExp[1];
   var _showReceipt = useState(null); var showReceipt = _showReceipt[0]; var setShowReceipt = _showReceipt[1];
-  var _form = useState({studentId:"",class:"",session:CURRENT_SESSION,term:CURRENT_TERM,feeType:"School Fees",amount:15000,amountPaid:0,datePaid:today(),status:"Unpaid",receipt:""});
+  var _form = useState({studentId:"",class:"",session:getCurrentSession(),term:getCurrentTerm(),feeType:"School Fees",amount:15000,amountPaid:0,datePaid:today(),status:"Unpaid",receipt:""});
   var form = _form[0]; var setForm = _form[1];
   var _expForm = useState({date:today(),amount:"",category:"Maintenance",reason:"",recordedBy:(currentUser&&currentUser.name)||"Admin"});
   var expForm = _expForm[0]; var setExpForm = _expForm[1];
@@ -2632,8 +2704,8 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
   var _selClass = useState("JSS1"); var selClass = _selClass[0]; var setSelClass = _selClass[1];
   var _selArm = useState("A"); var selArm = _selArm[0]; var setSelArm = _selArm[1];
   var _selSub = useState(""); var selSub = _selSub[0]; var setSelSub = _selSub[1];
-  var _selSess = useState(CURRENT_SESSION); var selSess = _selSess[0]; var setSelSess = _selSess[1];
-  var _selTerm = useState(CURRENT_TERM); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
+  var _selSess = useState(getCurrentSession()); var selSess = _selSess[0]; var setSelSess = _selSess[1];
+  var _selTerm = useState(getCurrentTerm()); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
   var _viewStudent = useState(null); var viewStudent = _viewStudent[0]; var setViewStudent = _viewStudent[1];
   var _saved = useState(false); var saved = _saved[0]; var setSaved = _saved[1];
   var _nextTerm = useState(""); var nextTerm = _nextTerm[0]; var setNextTerm = _nextTerm[1];
@@ -2647,7 +2719,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
   var subjects = getSubjects(selClass);
   if(selSub==="") { var firstSub = subjects[0]||""; }
   var rc = getResultConfig(settings);
-  var myStaffRec = staff.find(function(s){ return (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase(); });
+  var myStaffRec = findMyStaffRecord(staff, currentUser);
   var isPrincipal = isAdmin || (myStaffRec && String(myStaffRec.role||"").toLowerCase().indexOf("principal")!==-1);
   function isClassTeacherOf(cls){ return isAdmin || (myStaffRec && (myStaffRec.classes||[]).includes(cls)); }
 
@@ -2952,7 +3024,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
             <div style={S.formGroup}>
               <label style={S.label}>Class</label>
               <select style={S.select} value={selClass} onChange={function(e){setSelClass(e.target.value);setSelSub("");}}>
-                {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                {(!isAdmin&&myStaffRec?CLASSES.filter(function(c){return (myStaffRec.classes||[]).includes(c);}):CLASSES).map(function(c){return <option key={c}>{c}</option>;})}
               </select>
             </div>
             <div style={S.formGroup}>
@@ -2964,7 +3036,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
             <div style={S.formGroup}>
               <label style={S.label}>Subject</label>
               <select style={S.select} value={currentSub} onChange={function(e){setSelSub(e.target.value);}}>
-                {subjects.map(function(s){return <option key={s}>{s}</option>;})}
+                {(!isAdmin&&myStaffRec?subjects.filter(function(s){return (myStaffRec.subjects||[]).includes(s);}):subjects).map(function(s){return <option key={s}>{s}</option>;})}
               </select>
             </div>
           </div>
@@ -3526,6 +3598,17 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
 }
 
 
+// Derives a staff member's login username from their surname — this becomes
+// their /api/staff-login credential (see staff-login.js), paired with their
+// record id as the password. Two staff sharing a surname would otherwise
+// collide on the same username, so a collision is resolved by suffixing the
+// (already-known-by-now) record id, e.g. "adekunle" -> "adekunle-a1b2c3d4e".
+function computeStaffUsername(surname, id, staffList, excludeId){
+  var base = String(surname||"").trim().toLowerCase().replace(/[^a-z0-9]/g,"");
+  var collides = (staffList||[]).some(function(s){ return s.id!==excludeId && s.username===base; });
+  return collides ? (base+"-"+String(id).toLowerCase()) : base;
+}
+
 // Isolated from StaffModule's table so typing in this form never
 // re-renders the staff table below it.
 function StaffFormModal({open,staffMember,onSave,onClose}){
@@ -3583,14 +3666,38 @@ function StaffModule({staff,setStaff}){
   const [editing,setEditing]=useState(null);
   const [editingStaff,setEditingStaff]=useState(null);
   const [viewStaff,setViewStaff]=useState(null);
+  const [justIssued,setJustIssued]=useState(null); // {username,id,name} shown once right after adding staff
+
+  // Backfill: staff added before the username field existed have none stored.
+  // staff-login.js can already derive + self-heal this on their first login,
+  // but that leaves ID cards/profiles printed beforehand showing no "Login"
+  // line — generate it here too, the moment an admin has this module open,
+  // so credentials are correct on a card printed even before that staff
+  // member ever logs in. Guarded to run once per actually-missing batch, not
+  // on every render.
+  useEffect(function(){
+    if(!staff.some(function(s){return !s.username;})) return;
+    var next = staff.map(function(s){ return {...s}; });
+    next.forEach(function(s){
+      if(!s.username) s.username = computeStaffUsername(s.surname, s.id, next, s.id);
+    });
+    setStaff(next);
+  },[staff]);
 
   const filtered=staff.filter(s=>!search||`${s.surname} ${s.firstname}`.toLowerCase().includes(search.toLowerCase()));
 
   function openAdd(){setEditingStaff(null);setEditing(null);setShowForm(true);}
   function openEdit(s){setEditingStaff(s);setEditing(s.id);setShowForm(true);}
   function handleFormSave(rec){
-    if(editing){setStaff(p=>p.map(s=>s.id===editing?{...rec,id:editing}:s));}
-    else{setStaff(p=>[...p,{...rec,id:genId()}]);}
+    if(editing){
+      const username=computeStaffUsername(rec.surname,editing,staff,editing);
+      setStaff(p=>p.map(s=>s.id===editing?{...rec,id:editing,username:username}:s));
+    } else {
+      const id=genId();
+      const username=computeStaffUsername(rec.surname,id,staff,id);
+      setStaff(p=>[...p,{...rec,id:id,username:username}]);
+      setJustIssued({username:username,id:id,name:(rec.surname+" "+rec.firstname).trim()});
+    }
     setShowForm(false);
   }
 
@@ -3637,6 +3744,24 @@ function StaffModule({staff,setStaff}){
         <div style={S.grid2}>{[["DOB",formatDate(viewStaff.dob)],["Phone",viewStaff.phone],["Address",viewStaff.address],["Next of Kin",viewStaff.nextOfKin],["NOK Phone",viewStaff.nextOfKinPhone],["Periods/Wk",viewStaff.periodsPerWeek]].map(([k,v])=>(<div key={k} style={{marginBottom:8}}><div style={{fontSize:10,color:C.textMuted,fontWeight:600}}>{k}</div><div style={{fontSize:12,marginTop:1}}>{v}</div></div>))}</div>
         <div style={{marginTop:10}}><div style={{fontSize:10,color:C.textMuted,fontWeight:600,marginBottom:5}}>SUBJECTS</div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{(viewStaff.subjects||[]).map(s=><span key={s} style={S.badge("blue")}>{s}</span>)}</div></div>
         <div style={{marginTop:8}}><div style={{fontSize:10,color:C.textMuted,fontWeight:600,marginBottom:5}}>CLASSES</div><div style={{display:"flex",gap:5}}>{(viewStaff.classes||[]).map(c=><span key={c} style={S.badge("green")}>{c}</span>)}</div></div>
+        <div style={{marginTop:12,background:C.ivory,border:"1px solid "+C.border,borderRadius:8,padding:10}}>
+          <div style={{fontSize:10,color:C.textMuted,fontWeight:600,marginBottom:5}}>🔑 STAFF PORTAL LOGIN</div>
+          <div style={{fontSize:12}}>Username: <b>{viewStaff.username||"(save this record once to generate)"}</b></div>
+          <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>Password: their Staff ID shown above ({viewStaff.id})</div>
+        </div>
+      </div>}
+    </Modal>
+
+    <Modal open={!!justIssued} onClose={()=>setJustIssued(null)} title="✅ Staff Added — Login Issued">
+      {justIssued&&<div>
+        <div style={{fontSize:12,marginBottom:10}}>Give these login details to <b>{justIssued.name}</b> — they'll use them on the "Staff" tab of the login screen. This is shown only once here, but is always visible again from their profile's "Staff Portal Login" section.</div>
+        <div style={{background:C.primaryDark,borderRadius:8,padding:"13px 16px"}}>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>Username</div>
+          <div style={{fontSize:16,fontWeight:800,color:C.goldLight,marginBottom:8}}>{justIssued.username}</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>Password (Staff ID)</div>
+          <div style={{fontSize:16,fontWeight:800,color:C.goldLight}}>{justIssued.id}</div>
+        </div>
+        <div style={{...S.row,justifyContent:"flex-end",marginTop:14}}><button style={S.btn()} onClick={()=>setJustIssued(null)}>Done</button></div>
       </div>}
     </Modal>
   </div>);
@@ -4199,7 +4324,7 @@ function WelfareModule({students, staff, conduct, setConduct, messages, settings
     if(!form.studentId) return alert("Please select a student.");
     if(!form.description.trim()) return alert("Please describe the incident.");
     var stu = students.find(function(s){return s.id===form.studentId;});
-    var rec = {...form, id:genId(), studentName:stu?(stu.surname+" "+stu.firstname):"", class:stu?(stu.class+(stu.arm||"")):"", session:CURRENT_SESSION, term:CURRENT_TERM};
+    var rec = {...form, id:genId(), studentName:stu?(stu.surname+" "+stu.firstname):"", class:stu?(stu.class+(stu.arm||"")):"", session:getCurrentSession(), term:getCurrentTerm()};
     setConduct(function(p){return[rec,...p];});
     // SMS parent if selected
     if(form.parentNotified && stu && stu.parentPhone){
@@ -4243,7 +4368,7 @@ function WelfareModule({students, staff, conduct, setConduct, messages, settings
   }).sort(function(a,b){return b.date.localeCompare(a.date);});
 
   // Stats
-  var thisTermCases = conduct.filter(function(r){return r.session===CURRENT_SESSION&&r.term===CURRENT_TERM;});
+  var thisTermCases = conduct.filter(function(r){return r.session===getCurrentSession()&&r.term===getCurrentTerm();});
   var openCases = conduct.filter(function(r){return r.status==="Open"||r.status==="Under Review";});
   var severeCases = conduct.filter(function(r){return r.severity==="Serious"||r.severity==="Very Serious"||r.severity==="Expellable";});
   var typeMap = {};
@@ -4532,6 +4657,13 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
     console.log(field+" uploaded ("+Math.round(dataUrl.length/1024)+"KB)");
   });
 }
+  const [sessTermForm,setSessTermForm]=useState({session:settings.currentSession||CURRENT_SESSION,term:settings.currentTerm||CURRENT_TERM});
+  useEffect(function(){ setSessTermForm({session:settings.currentSession||CURRENT_SESSION,term:settings.currentTerm||CURRENT_TERM}); },[settings.currentSession,settings.currentTerm]);
+  function saveSessionTerm(){
+    if(!window.confirm("Change current session/term to "+sessTermForm.session+" — "+sessTermForm.term+"? This affects every new record and every dashboard/report across the whole app.")) return;
+    setSettingsSafe(p=>({...p,currentSession:sessTermForm.session,currentTerm:sessTermForm.term}));
+    alert("Session/Term updated.");
+  }
   function addCalEvent(){if(!calForm.title||!calForm.date)return alert("Title and date required.");setSettingsSafe(p=>({...p,calendarEvents:[...p.calendarEvents,{...calForm,id:genId()}]}));setCalForm({title:"",date:"",type:"Academic"});}
   function removeCalEvent(id){setSettingsSafe(p=>({...p,calendarEvents:p.calendarEvents.filter(e=>e.id!==id)}));}
   function addExtraClass(){if(!extraClass.trim())return;setSettingsSafe(p=>({...p,extraClasses:[...(p.extraClasses||[]),extraClass.trim()]}));setExtraClass("");}
@@ -4594,9 +4726,21 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
         <div style={S.card}>
           <div style={S.cardTitle}>System Info</div>
           <div style={{fontSize:12,color:C.textMuted}}>SIS v3.0 — Assanusiyyah Group of Schools</div>
-          <div style={{fontSize:11,color:C.textMuted,marginTop:4}}>Current Session: {CURRENT_SESSION}</div>
-          <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>Current Term: {CURRENT_TERM}</div>
           {!isRoot&&<div style={{...S.badge("yellow"),marginTop:8,display:"inline-block"}}>Read/Write access only</div>}
+        </div>
+        <div style={S.card}>
+          <div style={S.cardTitle}>📅 Session & Term</div>
+          {isRoot ? (<>
+            <div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>Sets what "current session/term" means everywhere in the app — new records, dashboards, and reports all default to this until changed here.</div>
+            <div style={S.grid2}>
+              <div style={S.formGroup}><label style={S.label}>Session</label><select style={S.select} value={sessTermForm.session} onChange={e=>setSessTermForm(p=>({...p,session:e.target.value}))}>{SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
+              <div style={S.formGroup}><label style={S.label}>Term</label><select style={S.select} value={sessTermForm.term} onChange={e=>setSessTermForm(p=>({...p,term:e.target.value}))}>{TERMS.map(function(t){return <option key={t}>{t}</option>;})}</select></div>
+            </div>
+            <div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>Currently active: <b>{settings.currentSession||CURRENT_SESSION} · {settings.currentTerm||CURRENT_TERM}</b></div>
+            <button style={S.btn()} onClick={saveSessionTerm}>Save Session & Term</button>
+          </>) : (
+            <div style={{fontSize:12,color:C.textMuted}}>Current: <b>{settings.currentSession||CURRENT_SESSION} · {settings.currentTerm||CURRENT_TERM}</b><br/>🔒 Only root admin can change this.</div>
+          )}
         </div>
       </div>
 
@@ -4953,9 +5097,9 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
 
       <div style={{...S.card,marginBottom:14}}>
         <div style={S.cardTitle}>Result Visibility to Students/Parents</div>
-        <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>Controls {CURRENT_TERM} {CURRENT_SESSION}. Older terms stay visible unless separately hidden.</div>
+        <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>Controls {getCurrentTerm()} {getCurrentSession()}. Older terms stay visible unless separately hidden.</div>
         {(function(){
-          var key = CURRENT_SESSION+"_"+CURRENT_TERM;
+          var key = getCurrentSession()+"_"+getCurrentTerm();
           var published = (settings.resultsPublished||{})[key] !== false;
           return(
             <div style={{...S.row,justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
@@ -5092,8 +5236,14 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
 // Isolated from LessonsModule's table so typing in this form (and the AI
 // auto-generate call, which sets several fields at once) never re-renders
 // the lessons table below it.
-function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
+function LessonFormModal({open, lesson, myStaff, staff, isAdmin, onSave, onClose}){
   const allSubjects=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
+  // A non-admin only ever creates lesson notes as themselves, for their own
+  // assigned classes/subjects — the Teacher picker and Subject list narrow
+  // accordingly instead of letting them pick any class/subject that the
+  // server (staff-data.js) would just reject anyway.
+  const restrictScope = !isAdmin && !!myStaff;
+  const myClasses = restrictScope ? (myStaff.classes||[]) : CLASSES;
 
   // Minimal input form — what the teacher actually fills before auto-generation
   const emptyForm = {
@@ -5129,7 +5279,7 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
       });
     } else {
       const f={...emptyForm};
-      if(myStaff){f.teacherId=myStaff.id;f.subject=(myStaff.subjects||[])[0]||"";}
+      if(myStaff){f.teacherId=myStaff.id;f.subject=(myStaff.subjects||[])[0]||"";f.class=(myStaff.classes||[])[0]||f.class;}
       setForm(f);
     }
     setGenError("");
@@ -5138,6 +5288,9 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
 
   function handleSave(statusOverride){
     if(!form.topic||!form.class||!form.subject) return alert("Date, Class, Subject and Topic are required.");
+    if(restrictScope && (myClasses.indexOf(form.class)===-1 || (myStaff.subjects||[]).indexOf(form.subject)===-1)) {
+      return alert("You can only create lesson notes for your own assigned subject and class.");
+    }
     onSave(statusOverride?{...form,status:statusOverride}:form);
   }
 
@@ -5213,20 +5366,24 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
         <div style={{fontWeight:700,color:C.primary,marginBottom:10,fontSize:12,borderBottom:"2px solid "+C.primary,paddingBottom:6}}>📋 LESSON DETAILS</div>
         <div style={S.grid3}>
           <FormField form={form} setForm={setForm} label="Date *" field="date" type="date"/>
-          <FormField form={form} setForm={setForm} label="Class *" field="class" opts={CLASSES}/>
+          <FormField form={form} setForm={setForm} label="Class *" field="class" opts={myClasses}/>
           <FormField form={form} setForm={setForm} label="Arm" field="arm" opts={ARMS}/>
           <div style={S.formGroup}>
             <label style={S.label}>Teacher *</label>
-            <select style={{...S.select,width:"100%"}} value={form.teacherId} onChange={e=>setForm(p=>({...p,teacherId:e.target.value}))}>
-              <option value="">-- Select Teacher --</option>
-              {staff.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.surname} {s.firstname}</option>)}
-            </select>
+            {restrictScope ? (
+              <div style={{...S.input,display:"flex",alignItems:"center",background:C.ivory,color:C.textMuted}}>{myStaff.surname} {myStaff.firstname}</div>
+            ) : (
+              <select style={{...S.select,width:"100%"}} value={form.teacherId} onChange={e=>setForm(p=>({...p,teacherId:e.target.value}))}>
+                <option value="">-- Select Teacher --</option>
+                {staff.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.surname} {s.firstname}</option>)}
+              </select>
+            )}
           </div>
           <div style={S.formGroup}>
             <label style={S.label}>Subject *</label>
             <select style={{...S.select,width:"100%"}} value={form.subject} onChange={e=>setForm(p=>({...p,subject:e.target.value}))}>
               <option value="">-- Select --</option>
-              {(form.teacherId?staff.find(s=>s.id===form.teacherId)?.subjects||allSubjects:allSubjects).map(s=><option key={s}>{s}</option>)}
+              {(restrictScope?(myStaff.subjects||[]):(form.teacherId?staff.find(s=>s.id===form.teacherId)?.subjects||allSubjects:allSubjects)).map(s=><option key={s}>{s}</option>)}
             </select>
           </div>
           <FormField form={form} setForm={setForm} label="Period" field="period" type="number"/>
@@ -5333,8 +5490,7 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
   const lessonViewRef = useRef();
 
   const isAdmin = currentUser.role==="root"||currentUser.role==="Admin";
-  const myStaff = staff.find(s=>s.id===currentUser.staffId||
-    (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
+  const myStaff = findMyStaffRecord(staff, currentUser);
   const allSubjects=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
 
   const filtered = lessons.filter(l=>
@@ -5509,7 +5665,7 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
       </div>}
     </Modal>
 
-    <LessonFormModal open={showForm} lesson={editingLesson} myStaff={myStaff} staff={staff} onSave={handleFormSave} onClose={()=>setShowForm(false)}/>
+    <LessonFormModal open={showForm} lesson={editingLesson} myStaff={myStaff} staff={staff} isAdmin={isAdmin} onSave={handleFormSave} onClose={()=>setShowForm(false)}/>
   </div>);
 }
 
@@ -5540,8 +5696,8 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
     );
   }
 
-  const isTeacherOrAdmin = currentUser.role==="root"||currentUser.role==="Admin"||currentUser.role==="Teacher";
-  const myStaff = staff.find(s=>(s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
+  const isTeacherOrAdmin = currentUser.role==="root"||currentUser.role==="Admin"||currentUser.role==="Teacher"||currentUser.role==="staff";
+  const myStaff = findMyStaffRecord(staff, currentUser);
   const myStudent = students.find(s=>(s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
 
   const accessibleClasses = isTeacherOrAdmin
@@ -5602,10 +5758,10 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
     if(stu){
       const asn = markingAssignment;
       setResults(prev=>{
-        const existing = prev.find(r=>r.studentId===sub.studentId&&r.session===CURRENT_SESSION&&r.term===CURRENT_TERM&&r.subject===asn.subject&&r.type==="assignment"&&r.lessonId===asn.lessonId);
+        const existing = prev.find(r=>r.studentId===sub.studentId&&r.session===getCurrentSession()&&r.term===getCurrentTerm()&&r.subject===asn.subject&&r.type==="assignment"&&r.lessonId===asn.lessonId);
         if(existing) return prev.map(r=>r.id===existing.id?{...r,assignmentScore:sc}:r);
         return [...prev,{
-          id:genId(),studentId:sub.studentId,session:CURRENT_SESSION,term:CURRENT_TERM,
+          id:genId(),studentId:sub.studentId,session:getCurrentSession(),term:getCurrentTerm(),
           class:stu.class,subject:asn.subject,type:"assignment",
           lessonId:asn.lessonId,assignmentId:asn.id,
           assignmentScore:sc,maxScore:asn.maxScore,createdAt:today()
@@ -5621,7 +5777,7 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
   }
 
   function getStudentAssignmentScores(studentId){
-    return results.filter(r=>r.studentId===studentId&&r.type==="assignment"&&r.session===CURRENT_SESSION&&r.term===CURRENT_TERM);
+    return results.filter(r=>r.studentId===studentId&&r.type==="assignment"&&r.session===getCurrentSession()&&r.term===getCurrentTerm());
   }
 
   // Students in selCls who have NOT submitted a given assignment — flagged for teacher
@@ -5884,7 +6040,7 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
     {/* ── MY SCORES TAB (student only) ── */}
     {tab==="myscores"&&myStudent&&<div>
       <div style={{...S.card,overflowX:"auto"}}>
-        <div style={S.cardTitle}>My Assignment Scores — {CURRENT_TERM} {CURRENT_SESSION}</div>
+        <div style={S.cardTitle}>My Assignment Scores — {getCurrentTerm()} {getCurrentSession()}</div>
         {getStudentAssignmentScores(myStudent.id).length===0?(
           <div style={{textAlign:"center",color:C.textMuted,padding:28}}>No marked assignments yet this term.</div>
         ):(
@@ -5950,7 +6106,7 @@ function DiaryModule({students, staff, diary, setDiary, currentUser}){
   function openEdit(e){ setForm({...e}); setEditing(e.id); setShowForm(true); }
   function save(){
     if(!form.date||!form.event.trim()) return alert("Date and Event description are required.");
-    const entry = { ...form, session: CURRENT_SESSION, term: CURRENT_TERM };
+    const entry = { ...form, session: getCurrentSession(), term: getCurrentTerm() };
     if(editing){ setDiary(p=>p.map(d=>d.id===editing?{...entry,id:editing}:d)); }
     else{ setDiary(p=>[...p,{...entry,id:genId()}]); }
     setShowForm(false);
@@ -5970,8 +6126,8 @@ function DiaryModule({students, staff, diary, setDiary, currentUser}){
   // ── REPORT GENERATION STATE ──
   const [reportScope, setReportScope] = useState("week"); // week | term | session
   const [reportWeekDate, setReportWeekDate] = useState(today());
-  const [reportTerm, setReportTerm] = useState(CURRENT_TERM);
-  const [reportSession, setReportSession] = useState(CURRENT_SESSION);
+  const [reportTerm, setReportTerm] = useState(getCurrentTerm());
+  const [reportSession, setReportSession] = useState(getCurrentSession());
   const [generatedReport, setGeneratedReport] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
@@ -6064,7 +6220,7 @@ function DiaryModule({students, staff, diary, setDiary, currentUser}){
         {[
           {l:"Total Entries",v:diary.length,bg:"#FFF7ED"},
           {l:"This Week",v:diary.filter(d=>{const {start,end}=getWeekRange(today());return d.date>=start&&d.date<=end;}).length,bg:"#F0FDF4"},
-          {l:"This Term",v:diary.filter(d=>d.term===CURRENT_TERM&&d.session===CURRENT_SESSION).length,bg:"#EFF6FF"},
+          {l:"This Term",v:diary.filter(d=>d.term===getCurrentTerm()&&d.session===getCurrentSession()).length,bg:"#EFF6FF"},
           {l:"Discipline Entries",v:diary.filter(d=>d.category==="Discipline").length,bg:"#FEF2F2"},
         ].map((s,i)=><div key={i} style={S.statCard(s.bg)}><div style={S.statNum}>{s.v}</div><div style={S.statLabel}>{s.l}</div></div>)}
       </div>
@@ -7083,8 +7239,8 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
       disposition:form.disposition,
       followUp:form.followUp,
       notes:form.notes,
-      session:CURRENT_SESSION,
-      term:CURRENT_TERM,
+      session:getCurrentSession(),
+      term:getCurrentTerm(),
     };
     setClinic(function(p){return[record,...p];});
     // SMS parent (student) or staff member directly (staff patient)
@@ -7108,7 +7264,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
 
   var todayRecords = clinic.filter(function(r){return r.date===today();});
   var sickBay = clinic.filter(function(r){return r.disposition==="Admitted to sick bay";});
-  var thisTermVisits = clinic.filter(function(r){return r.session===CURRENT_SESSION&&r.term===CURRENT_TERM;}).length;
+  var thisTermVisits = clinic.filter(function(r){return r.session===getCurrentSession()&&r.term===getCurrentTerm();}).length;
   var visitMap = {};
   clinic.forEach(function(r){var pid=recordPatientId(r); if(pid) visitMap[pid]=(visitMap[pid]||0)+1;});
   var frequent = Object.entries(visitMap).sort(function(a,b){return b[1]-a[1];}).slice(0,5).map(function(e){
@@ -7119,7 +7275,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
     return{name:"Unknown",count:e[1],class:"",id:e[0]};
   });
   var condMapObj={};
-  clinic.filter(function(r){return r.session===CURRENT_SESSION&&r.term===CURRENT_TERM;}).forEach(function(r){
+  clinic.filter(function(r){return r.session===getCurrentSession()&&r.term===getCurrentTerm();}).forEach(function(r){
     var cond=(r.presentingCondition||"").split(",")[0].trim();
     if(cond)condMapObj[cond]=(condMapObj[cond]||0)+1;
   });
@@ -7158,7 +7314,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
 
   // ── Drug intake report (day / week / month / term) ──
   function isInDrugPeriod(r){
-    if(drugPeriod==="term") return r.session===CURRENT_SESSION && r.term===CURRENT_TERM;
+    if(drugPeriod==="term") return r.session===getCurrentSession() && r.term===getCurrentTerm();
     if(drugPeriod==="day") return r.date===drugRefDate;
     if(drugPeriod==="week"){
       var ref = new Date(drugRefDate);
@@ -7180,7 +7336,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
     });
   });
   var drugStats = Object.entries(drugFreqMap).sort(function(a,b){return b[1]-a[1];});
-  var drugPeriodLabel = drugPeriod==="term" ? (CURRENT_TERM+" "+CURRENT_SESSION)
+  var drugPeriodLabel = drugPeriod==="term" ? (getCurrentTerm()+" "+getCurrentSession())
     : drugPeriod==="day" ? formatDate(drugRefDate)
     : drugPeriod==="week" ? ("Week containing "+formatDate(drugRefDate))
     : ("Month of "+formatDate(drugRefDate));
@@ -7646,7 +7802,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
             <TableActionBar
               title="Clinic Statistics"
               onPrint={function(){
-                var hdr = buildDocHeader(settings,"SCHOOL CLINIC STATISTICS — "+CURRENT_TERM+" "+CURRENT_SESSION);
+                var hdr = buildDocHeader(settings,"SCHOOL CLINIC STATISTICS — "+getCurrentTerm()+" "+getCurrentSession());
                 var html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Clinic Statistics</title><style>'+hdr.printStyles+'</style></head><body>'+hdr.headerHtml+
                   '<table><tr><th>Metric</th><th>Value</th></tr>'+
                   '<tr><td>Today</td><td>'+todayRecords.length+'</td></tr>'+
@@ -7659,11 +7815,11 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
               }}
               columns={["Condition","Visits This Term"]}
               rows={conditionStats.map(function(e){return [e[0],e[1]];})}
-              filename={"Clinic_Statistics_"+CURRENT_TERM+"_"+CURRENT_SESSION}
+              filename={"Clinic_Statistics_"+getCurrentTerm()+"_"+getCurrentSession()}
             />
           </div>
           <div style={S.statsGrid}>
-            {[{l:"Today",v:todayRecords.length,bg:"#FEF2F2"},{l:"This Term",v:thisTermVisits,bg:"#FFF7ED"},{l:"In Sick Bay",v:sickBay.length,bg:"#FEF2F2"},{l:"Total Records",v:clinic.length,bg:"#F5F3FB"},{l:"Unique Patients",v:Object.keys(visitMap).length,bg:"#EFF6FF"},{l:"Referred to Hospital",v:clinic.filter(function(r){return r.disposition==="Referred to hospital"&&r.session===CURRENT_SESSION&&r.term===CURRENT_TERM;}).length,bg:"#FEE2E2"}].map(function(s,i){
+            {[{l:"Today",v:todayRecords.length,bg:"#FEF2F2"},{l:"This Term",v:thisTermVisits,bg:"#FFF7ED"},{l:"In Sick Bay",v:sickBay.length,bg:"#FEF2F2"},{l:"Total Records",v:clinic.length,bg:"#F5F3FB"},{l:"Unique Patients",v:Object.keys(visitMap).length,bg:"#EFF6FF"},{l:"Referred to Hospital",v:clinic.filter(function(r){return r.disposition==="Referred to hospital"&&r.session===getCurrentSession()&&r.term===getCurrentTerm();}).length,bg:"#FEE2E2"}].map(function(s,i){
               return <div key={i} style={S.statCard(s.bg)}><div style={{...S.statNum,fontSize:20}}>{s.v}</div><div style={S.statLabel}>{s.l}</div></div>;
             })}
           </div>
@@ -7710,7 +7866,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
                 title={"Drug Intake Report - "+drugPeriodLabel}
                 columns={["Drug","Times Dispensed"]}
                 rows={drugStats.map(function(e){return [e[0],e[1]];})}
-                filename={"Drug_Intake_"+drugPeriod+"_"+(drugPeriod==="term"?CURRENT_TERM+"_"+CURRENT_SESSION:drugRefDate)}
+                filename={"Drug_Intake_"+drugPeriod+"_"+(drugPeriod==="term"?getCurrentTerm()+"_"+getCurrentSession():drugRefDate)}
                 onPrint={function(){
                   var hdr = buildDocHeader(settings,"CLINIC DRUG INTAKE REPORT");
                   var rowsHtml = drugStats.map(function(e){return '<tr><td>'+e[0]+'</td><td style="text-align:center;font-weight:700;">'+e[1]+'</td></tr>';}).join("");
@@ -7753,7 +7909,7 @@ function HostelModule({students, staff, settings, currentUser,
   var _tab = useState("inventory"); var tab = _tab[0]; var setTab = _tab[1];
 
   var isAdmin = currentUser.role==="root"||currentUser.role==="Admin";
-  var myStaffRec = staff.find(function(s){return (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase();});
+  var myStaffRec = findMyStaffRecord(staff, currentUser);
   var myRole = myStaffRec ? myStaffRec.role : null;
   var canApprove = isAdmin || currentUser.role==="Bursar" || myRole==="Matron";
   var isKitchenRestricted = myRole==="Hostel Master" || myRole==="Hostel Mistress";
@@ -7794,7 +7950,7 @@ function HostelModule({students, staff, settings, currentUser,
     if(!qty || qty<=0) return alert("Enter a valid quantity.");
     if(qty > consuming.currentStock) { if(!window.confirm("This exceeds current stock ("+consuming.currentStock+" "+consuming.unit+"). Log anyway?")) return; }
     setHostelInventory(function(p){return p.map(function(i){return i.id===consuming.id?{...i,currentStock:Math.max(0,i.currentStock-qty)}:i;});});
-    setHostelConsumption(function(p){return [{id:genId(), itemId:consuming.id, itemName:consuming.name, hostel:consuming.hostel, quantity:qty, unit:consuming.unit, date:today(), loggedBy:currentUser.name, session:CURRENT_SESSION, term:CURRENT_TERM}, ...p];});
+    setHostelConsumption(function(p){return [{id:genId(), itemId:consuming.id, itemName:consuming.name, hostel:consuming.hostel, quantity:qty, unit:consuming.unit, date:today(), loggedBy:currentUser.name, session:getCurrentSession(), term:getCurrentTerm()}, ...p];});
     setConsuming(null); setConsumeQty("");
   }
   function restockItem(){
@@ -8220,8 +8376,8 @@ function HostelModule({students, staff, settings, currentUser,
 
 function ParentPortal({student, students, results, resultStats, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, exams, gallery, parentToken, onRefresh, onLogout}){
   var _tab = useState("home"); var tab = _tab[0]; var setTab = _tab[1];
-  var _selSess = useState(CURRENT_SESSION); var selSess = _selSess[0]; var setSelSess = _selSess[1];
-  var _selTerm = useState(CURRENT_TERM); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
+  var _selSess = useState(getCurrentSession()); var selSess = _selSess[0]; var setSelSess = _selSess[1];
+  var _selTerm = useState(getCurrentTerm()); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
   var _selLesson = useState(null); var selLesson = _selLesson[0]; var setSelLesson = _selLesson[1];
   var _activeAttempt = useState(null); var activeAttempt = _activeAttempt[0]; var setActiveAttempt = _activeAttempt[1];
   var _examResult = useState(null); var examResult = _examResult[0]; var setExamResult = _examResult[1];
@@ -8457,7 +8613,7 @@ function ParentPortal({student, students, results, resultStats, attendance, fees
             <div style={{display:"flex",gap:12,marginTop:6,flexWrap:"wrap"}}>
               <span style={{fontSize:11,opacity:0.8}}>📚 {student.boardingType||"Day"} Student</span>
               <span style={{fontSize:11,opacity:0.8}}>🩸 {student.bloodGroup||"—"} · {student.genotype||"—"}</span>
-              <span style={{fontSize:11,opacity:0.8}}>📅 {CURRENT_TERM} {CURRENT_SESSION}</span>
+              <span style={{fontSize:11,opacity:0.8}}>📅 {getCurrentTerm()} {getCurrentSession()}</span>
             </div>
           </div>
           {logo ? <img src={logo} alt="" style={{width:50,height:50,objectFit:"contain",opacity:0.8}}/> : null}
@@ -9241,8 +9397,8 @@ function PayrollModule({staff, settings, currentUser}){
 function CalendarModule({students, staff, settings, timetable, lessons}){
   var _selClass = useState("JSS1"); var selClass = _selClass[0]; var setSelClass = _selClass[1];
   var _selSub = useState(""); var selSub = _selSub[0]; var setSelSub = _selSub[1];
-  var _selTerm = useState(CURRENT_TERM); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
-  var _selSess = useState(CURRENT_SESSION); var selSess = _selSess[0]; var setSelSess = _selSess[1];
+  var _selTerm = useState(getCurrentTerm()); var selTerm = _selTerm[0]; var setSelTerm = _selTerm[1];
+  var _selSess = useState(getCurrentSession()); var selSess = _selSess[0]; var setSelSess = _selSess[1];
   var _plans = useState({}); var plans = _plans[0]; var setPlans = _plans[1];
 
   var subjects = getSubjects(selClass);
@@ -9536,8 +9692,8 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
 
   // ── Report filters ────────────────────────────────
   var _repPeriod = useState("term"); var repPeriod = _repPeriod[0]; var setRepPeriod = _repPeriod[1];
-  var _repSess = useState(CURRENT_SESSION); var repSess = _repSess[0]; var setRepSess = _repSess[1];
-  var _repTerm = useState(CURRENT_TERM); var repTerm = _repTerm[0]; var setRepTerm = _repTerm[1];
+  var _repSess = useState(getCurrentSession()); var repSess = _repSess[0]; var setRepSess = _repSess[1];
+  var _repTerm = useState(getCurrentTerm()); var repTerm = _repTerm[0]; var setRepTerm = _repTerm[1];
   var _repWeek = useState(""); var repWeek = _repWeek[0]; var setRepWeek = _repWeek[1];
 
   // ── Class students ────────────────────────────────
@@ -9581,7 +9737,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
   // ── Auto-detect academic concerns from results ────────
   function getAcademicFlags(studentId){
     var stuResults = results.filter(function(r){
-      return r.studentId===studentId && r.session===CURRENT_SESSION && r.term===CURRENT_TERM;
+      return r.studentId===studentId && r.session===getCurrentSession() && r.term===getCurrentTerm();
     });
     var flags = [];
     if(stuResults.length > 0){
@@ -9601,7 +9757,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
     var flags = [];
     // Attendance
     var stuAtt = attendance.filter(function(a){
-      return a.studentId===studentId && a.session===CURRENT_SESSION && a.term===CURRENT_TERM;
+      return a.studentId===studentId && a.session===getCurrentSession() && a.term===getCurrentTerm();
     });
     if(stuAtt.length > 0){
       var pct = Math.round(stuAtt.filter(function(a){return a.present;}).length/stuAtt.length*100);
@@ -9609,14 +9765,14 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
     }
     // Disciplinary
     var stuConduct = conduct.filter(function(c){
-      return c.studentId===studentId && c.session===CURRENT_SESSION && c.term===CURRENT_TERM;
+      return c.studentId===studentId && c.session===getCurrentSession() && c.term===getCurrentTerm();
     });
     if(stuConduct.length > 0){
       flags.push(stuConduct.length+" disciplinary incident(s): "+stuConduct.map(function(c){return c.incidentType;}).join(", "));
     }
     // Clinic visits
     var stuClinic = clinic.filter(function(c){
-      return c.studentId===studentId && c.session===CURRENT_SESSION && c.term===CURRENT_TERM;
+      return c.studentId===studentId && c.session===getCurrentSession() && c.term===getCurrentTerm();
     });
     if(stuClinic.length >= 3){
       flags.push("Frequent clinic visits: "+stuClinic.length+" this term");
@@ -9639,7 +9795,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
       studentName:foundStudent.surname+" "+foundStudent.firstname,
       class:foundStudent.class+(foundStudent.arm||""),
       date:today(), time:visitTime,
-      session:CURRENT_SESSION, term:CURRENT_TERM,
+      session:getCurrentSession(), term:getCurrentTerm(),
       weekNumber:getWeekNumber(today()),
       ...form,
       presentingCasesAll:[...form.presentingCases,...(form.otherCase?[form.otherCase]:[])],
@@ -10036,7 +10192,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
 
               // 1. Academic — results this term
               var stuResults = results.filter(function(r){
-                return r.studentId===s.id && r.session===CURRENT_SESSION && r.term===CURRENT_TERM;
+                return r.studentId===s.id && r.session===getCurrentSession() && r.term===getCurrentTerm();
               });
               var avg = stuResults.length ? stuResults.reduce(function(a,r){return a+(r.total||0);},0)/stuResults.length : null;
               var failCount = stuResults.filter(function(r){return r.total<40;}).length;
@@ -10048,7 +10204,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
 
               // 2. Attendance — this term
               var stuAtt = attendance.filter(function(a){
-                return a.studentId===s.id && a.session===CURRENT_SESSION && a.term===CURRENT_TERM;
+                return a.studentId===s.id && a.session===getCurrentSession() && a.term===getCurrentTerm();
               });
               var attPct = stuAtt.length ? Math.round(stuAtt.filter(function(a){return a.present;}).length/stuAtt.length*100) : null;
               if(attPct!==null && attPct<60){ score+=4; flags.push({label:"Attendance critical: "+attPct+"%",cat:"attendance",severity:4}); }
@@ -10056,7 +10212,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
 
               // 3. Disciplinary — this term
               var stuConduct = conduct.filter(function(c){
-                return c.studentId===s.id && c.session===CURRENT_SESSION && c.term===CURRENT_TERM;
+                return c.studentId===s.id && c.session===getCurrentSession() && c.term===getCurrentTerm();
               });
               var seriousConduct = stuConduct.filter(function(c){
                 return c.severity==="Serious"||c.severity==="Very Serious"||c.severity==="Expellable";
@@ -10067,7 +10223,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
 
               // 4. Clinic — frequent visits
               var stuClinic = clinic.filter(function(c){
-                return c.studentId===s.id && c.session===CURRENT_SESSION && c.term===CURRENT_TERM;
+                return c.studentId===s.id && c.session===getCurrentSession() && c.term===getCurrentTerm();
               });
               var sickBayVisits = stuClinic.filter(function(c){return c.disposition==="Admitted to sick bay";}).length;
               var referrals = stuClinic.filter(function(c){return c.disposition==="Referred to hospital";}).length;
@@ -10241,12 +10397,12 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
             {classStudents.map(function(s){
-              var stuResults = results.filter(function(r){return r.studentId===s.id&&r.session===CURRENT_SESSION&&r.term===CURRENT_TERM;});
+              var stuResults = results.filter(function(r){return r.studentId===s.id&&r.session===getCurrentSession()&&r.term===getCurrentTerm();});
               var avg = stuResults.length ? (stuResults.reduce(function(a,r){return a+(r.total||0);},0)/stuResults.length).toFixed(1) : null;
-              var stuAtt = attendance.filter(function(a){return a.studentId===s.id&&a.session===CURRENT_SESSION&&a.term===CURRENT_TERM;});
+              var stuAtt = attendance.filter(function(a){return a.studentId===s.id&&a.session===getCurrentSession()&&a.term===getCurrentTerm();});
               var attPct = stuAtt.length ? Math.round(stuAtt.filter(function(a){return a.present;}).length/stuAtt.length*100) : null;
-              var stuConduct = conduct.filter(function(c){return c.studentId===s.id&&c.session===CURRENT_SESSION&&c.term===CURRENT_TERM;});
-              var stuClinic = clinic.filter(function(c){return c.studentId===s.id&&c.session===CURRENT_SESSION&&c.term===CURRENT_TERM;});
+              var stuConduct = conduct.filter(function(c){return c.studentId===s.id&&c.session===getCurrentSession()&&c.term===getCurrentTerm();});
+              var stuClinic = clinic.filter(function(c){return c.studentId===s.id&&c.session===getCurrentSession()&&c.term===getCurrentTerm();});
               var stuSessions = sessions.filter(function(ss){return ss.studentId===s.id;});
               var hasFlag = (avg&&parseFloat(avg)<50)||(attPct&&attPct<75)||stuConduct.length>0||stuClinic.length>=3;
               return(
@@ -10425,7 +10581,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
     parentName:"", parentPhone:"", parentAlt:"", parentEmail:"",
     parentOccupation:"", parentAddress:"",
     // Application details
-    applyingForClass:"JSS1", entrySession:CURRENT_SESSION,
+    applyingForClass:"JSS1", entrySession:getCurrentSession(),
     boardingType:"Day", howHeard:"",
     // Documents
     passport:"", birthCert:false, reportCard:false, testimonial:false,
@@ -10440,7 +10596,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
   var HOW_HEARD = ["Word of mouth","Social media","School fair","Mosque/Church","Former student","Billboard","Others"];
 
   function genRefNo(){
-    return "ADM/"+CURRENT_SESSION.split("/")[0]+"/"+String(applications.length+1001).padStart(4,"0");
+    return "ADM/"+getCurrentSession().split("/")[0]+"/"+String(applications.length+1001).padStart(4,"0");
   }
 
   function submitApplication(){
@@ -10666,7 +10822,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
                   <div style={{fontSize:16,fontWeight:900}}>{SCHOOL_NAME}</div>
-                  <div style={{fontSize:13,opacity:0.8,marginTop:2}}>Admission Application Form — {CURRENT_SESSION}</div>
+                  <div style={{fontSize:13,opacity:0.8,marginTop:2}}>Admission Application Form — {getCurrentSession()}</div>
                 </div>
                 <button onClick={function(){setShowPortal(false);setAppStep(1);setAppForm(emptyApp);setAppSubmitted(null);}} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",padding:"6px 12px",borderRadius:6,cursor:"pointer",fontSize:12}}>✕ Close</button>
               </div>
@@ -10818,7 +10974,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
 // CBT toggle (ready for AssanCBT integration)
 // Score flows to CA1 / CA2 / Exam column
 // ══════════════════════════════════════════════════════
-function ExamModule({students, results, setResults, settings, currentUser, exams, setExams, examMarks, setExamMarks, cbtEnabled, setCbtEnabled}){
+function ExamModule({students, staff, results, setResults, settings, currentUser, exams, setExams, examMarks, setExamMarks, cbtEnabled, setCbtEnabled}){
   var _tab = useState("exams"); var tab = _tab[0]; var setTab = _tab[1];
   var _showCreate = useState(false); var showCreate = _showCreate[0]; var setShowCreate = _showCreate[1];
   var _marking = useState(null); var marking = _marking[0]; var setMarking = _marking[1];
@@ -10828,11 +10984,22 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
   var _reportLoading = useState(false); var reportLoading = _reportLoading[0]; var setReportLoading = _reportLoading[1];
 
   var isAdmin = currentUser.role==="root"||currentUser.role==="admin"||currentUser.role==="Admin";
+  // Non-admin (e.g. a staff-role login) only ever sees/creates/marks exams
+  // within their own assigned subjects+classes — mirrors the scoping
+  // LessonsModule already does for lesson notes.
+  var myStaffRec = findMyStaffRecord(staff||[], currentUser);
+  // Only scope down when we can actually resolve a staff record — an
+  // admins_list "Teacher" account with no matching staff row keeps the old,
+  // unscoped behavior rather than being locked out of every exam.
+  var restrictScope = !isAdmin && !!myStaffRec;
+  var myClasses = restrictScope ? (myStaffRec.classes||[]) : CLASSES;
+  var mySubjects = restrictScope ? (myStaffRec.subjects||[]) : [];
+  function canSeeExam(e){ return !restrictScope || (myClasses.indexOf(e.class)!==-1 && mySubjects.indexOf(e.subject)!==-1); }
 
   // ── Exam creation form ────────────────────────────
   var emptyExam = {
-    title:"", class:"JSS1", arm:"A", subject:"", session:CURRENT_SESSION,
-    term:CURRENT_TERM, date:today(), duration:60,
+    title:"", class: restrictScope?(myClasses[0]||"JSS1"):"JSS1", arm:"A", subject: restrictScope?(mySubjects[0]||""):"", session:getCurrentSession(),
+    term:getCurrentTerm(), date:today(), duration:60,
     column:"ca1", type:"theory",
     totalMarks:100, questions:[], status:"Draft",
     cbtActive:false, manualEntryActive:true
@@ -10875,6 +11042,9 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
   function saveExam(){
     if(!form.title.trim()) return alert("Exam title is required.");
     if(!form.subject) return alert("Please select a subject.");
+    if(restrictScope && (myClasses.indexOf(form.class)===-1 || mySubjects.indexOf(form.subject)===-1)) {
+      return alert("You can only create exams for your own assigned subject and class.");
+    }
     if(!form.questions.length) return alert("Add at least one question.");
     var totalMarks = form.questions.reduce(function(a,q){return a+(parseFloat(q.marks)||0);},0);
     var exam = {...form, id:genId(), totalMarks:totalMarks, createdBy:currentUser.name, createdAt:today()};
@@ -11058,7 +11228,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
     if(w){w.document.write(html);w.document.close();w.print();}
   }
 
-  var filtered = exams.filter(function(e){
+  var filtered = exams.filter(canSeeExam).filter(function(e){
     return !search||(e.title+e.subject+e.class).toLowerCase().includes(search.toLowerCase());
   });
 
@@ -11243,7 +11413,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
         {[["exams","📝 All Exams"],["marking","✏️ Mark Exam"]].map(function(pair){
           return <button key={pair[0]} onClick={function(){setTab(pair[0]);setMarking(null);}} style={{...S.btn(tab===pair[0]?"primary":"secondary"),borderRadius:"6px 6px 0 0",marginBottom:-2,fontSize:11,padding:"6px 14px"}}>{pair[1]}</button>;
         })}
-        {isAdmin&&<button onClick={function(){setShowCreate(true);setForm(emptyExam);}} style={{...S.btn("green"),marginLeft:"auto",fontSize:11,marginBottom:4}}>+ Create Exam</button>}
+        {(isAdmin||myStaffRec)&&<button onClick={function(){setShowCreate(true);setForm(emptyExam);}} style={{...S.btn("green"),marginLeft:"auto",fontSize:11,marginBottom:4}}>+ Create Exam</button>}
       </div>
 
       {/* Marking view */}
@@ -11327,9 +11497,9 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
               <div style={{fontSize:12,fontWeight:700,color:C.primaryDark,marginBottom:10}}>EXAM DETAILS</div>
               <div style={S.grid2}>
                 <div style={{...S.formGroup,gridColumn:"1/-1"}}><label style={S.label}>Exam Title *</label><input style={S.input} value={form.title} onChange={function(e){setForm(function(p){return{...p,title:e.target.value};});}} placeholder="e.g. First Term Mid-Term Mathematics Examination"/></div>
-                <div style={S.formGroup}><label style={S.label}>Class *</label><select style={{...S.select,width:"100%"}} value={form.class} onChange={function(e){setForm(function(p){return{...p,class:e.target.value};});}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+                <div style={S.formGroup}><label style={S.label}>Class *</label><select style={{...S.select,width:"100%"}} value={form.class} onChange={function(e){setForm(function(p){return{...p,class:e.target.value};});}}>{myClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
                 <div style={S.formGroup}><label style={S.label}>Arm</label><select style={{...S.select,width:"100%"}} value={form.arm} onChange={function(e){setForm(function(p){return{...p,arm:e.target.value};});}}>{ARMS.map(function(a){return <option key={a}>{a}</option>;})}</select></div>
-                <div style={S.formGroup}><label style={S.label}>Subject *</label><select style={{...S.select,width:"100%"}} value={form.subject} onChange={function(e){setForm(function(p){return{...p,subject:e.target.value};});}}><option value="">— Select —</option>{getSubjects(form.class).map(function(s){return <option key={s}>{s}</option>;})}</select></div>
+                <div style={S.formGroup}><label style={S.label}>Subject *</label><select style={{...S.select,width:"100%"}} value={form.subject} onChange={function(e){setForm(function(p){return{...p,subject:e.target.value};});}}><option value="">— Select —</option>{(restrictScope?getSubjects(form.class).filter(function(s){return mySubjects.indexOf(s)!==-1;}):getSubjects(form.class)).map(function(s){return <option key={s}>{s}</option>;})}</select></div>
                 <div style={S.formGroup}><label style={S.label}>Score Column *</label><select style={{...S.select,width:"100%"}} value={form.column} onChange={function(e){setForm(function(p){return{...p,column:e.target.value};});}}>{Object.entries(COLUMN_LABELS).map(function(e){return <option key={e[0]} value={e[0]}>{e[1]}</option>;})}</select></div>
                 <div style={S.formGroup}><label style={S.label}>Exam Date</label><input type="date" style={S.input} value={form.date} onChange={function(e){setForm(function(p){return{...p,date:e.target.value};});}}/></div>
                 <div style={S.formGroup}><label style={S.label}>Duration (minutes)</label><input type="number" style={S.input} value={form.duration} onChange={function(e){setForm(function(p){return{...p,duration:e.target.value};});}} min="10" max="300"/></div>
@@ -11459,7 +11629,7 @@ function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, sub
     prevSchool:"", prevClass:"", prevSession:"",
     parentName:"", parentPhone:"", parentAlt:"", parentEmail:"",
     parentOccupation:"", parentAddress:"",
-    applyingForClass:"JSS1", entrySession:CURRENT_SESSION,
+    applyingForClass:"JSS1", entrySession:getCurrentSession(),
     boardingType:"Day", howHeard:"",
     passport:"", birthCert:false, reportCard:false, testimonial:false,
     declaration:false
@@ -11750,13 +11920,31 @@ function LoginScreen({settings,onLogin,onParentLogin,onCandidateLogin,onStartApp
       }).then(function(r){return r.json();}).then(function(result){
         if(result.success&&result.admin&&result.token){
           setAuthToken(result.token);
+          setSessionRole(result.admin.role);
           setError("");
           onLogin(result.admin);
-        } else {
-          setError(result.error==="Account deactivated"?"This account has been deactivated.":"Invalid username or password.");
-          setLoading(false);
-          setTimeout(function(){setError("");},4000);
+          return;
         }
+        // Not an admins_list account (root/Admin/Teacher/...) — try the
+        // registered-staff login (username = surname, password = staff ID,
+        // see staff-login.js) before giving up. Same "Staff" tab covers both,
+        // since to the person logging in they're both just "staff".
+        return fetch("/api/staff-login",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({username:username,password:password})
+        }).then(function(r){return r.json();}).then(function(staffResult){
+          if(staffResult.success&&staffResult.admin&&staffResult.token){
+            setAuthToken(staffResult.token);
+            setSessionRole(staffResult.admin.role);
+            setError("");
+            onLogin(staffResult.admin);
+          } else {
+            setError(staffResult.error==="Account deactivated"?"This account has been deactivated.":"Invalid username or password.");
+            setLoading(false);
+            setTimeout(function(){setError("");},4000);
+          }
+        });
       }).catch(function(e){
         setError("Could not reach the server. Check your connection and try again.");
         setLoading(false);
@@ -11995,7 +12183,7 @@ function buildGeneralInfoHtml(app, settings){
 function getExpirySession(person){
   // JSS1→expires after JSS3, SS1→expires after SS3
   var cls = person.class||"";
-  var entrySess = person.entrySession||CURRENT_SESSION;
+  var entrySess = person.entrySession||getCurrentSession();
   var entryYear = parseInt(entrySess.split("/")[0])||2024;
   var expiryYear;
   if(cls.startsWith("JSS")){ expiryYear = entryYear + 3; }
@@ -12005,14 +12193,18 @@ function getExpirySession(person){
 }
 
 function getIssueYear(person){
-  var sess = person.entrySession||CURRENT_SESSION;
+  var sess = person.entrySession||getCurrentSession();
   return sess.split("/")[0]||new Date().getFullYear();
 }
 
 function IDCardFront({person, type, settings}){
   var isStudent = type==="student";
   var fullName = (person.surname+" "+person.firstname+" "+(person.middlename||"")).trim();
-  var idNumber = isStudent ? (person.admissionNo||"ASS/----/----") : ("STAFF/"+String(person.id).slice(-4).toUpperCase());
+  // For staff, this is deliberately the FULL, un-truncated person.id — it's
+  // also their Staff Portal login password (see staff-login.js), so what's
+  // printed on the card must exactly match what they'd type in, not a
+  // shortened display-only reference number.
+  var idNumber = isStudent ? (person.admissionNo||"ASS/----/----") : person.id;
   var accentColor = isStudent ? "#230E6A" : "#6B491B";
   var accentLight = isStudent ? "#3D2496" : "#8A5F26";
   var bodyBg = isStudent ? "#F5F3FB" : "#FBF6EE";
@@ -12063,6 +12255,7 @@ function IDCardFront({person, type, settings}){
             ["ID No.", idNumber],
             [isStudent?"Class":null, isStudent?role:null],
             [isStudent?null:"Role", isStudent?null:role],
+            (!isStudent&&person.username) ? ["Login", person.username] : null,
             ["Issued", issueYear],
             isStudent ? ["Expires", expiry] : null,
           ].filter(Boolean).map(function(pair,i){
@@ -12191,7 +12384,9 @@ function IDCardsModule({students, staff, settings, currentUser}){
     var logo = settings&&settings.schoolLogo ? `<img src="${settings.schoolLogo}" style="width:28px;height:28px;object-fit:contain;border-radius:50%;background:#fff;" alt=""/>` : `<div style="width:28px;height:28px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;color:${ac};font-size:10px;">AS</div>`;
     var photo = person.passport ? `<img src="${person.passport}" style="width:100%;height:100%;object-fit:cover;"/>` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:30px;">${isStudent?"👤":"👩‍💼"}</div>`;
     var fullName = (person.surname+" "+person.firstname+" "+(person.middlename||"")).trim();
-    var idNum = isStudent ? (person.admissionNo||"---") : ("STAFF/"+String(person.id).slice(-4).toUpperCase());
+    // Full, un-truncated id for staff — doubles as their Staff Portal login
+    // password (see staff-login.js), so it must match what's typed at login.
+    var idNum = isStudent ? (person.admissionNo||"---") : person.id;
     var issueYear = getIssueYear(person);
     var expiry = isStudent ? getExpirySession(person) : null;
     var role = isStudent ? (person.class+(person.arm||"")) : (person.role||"Staff");
@@ -12225,6 +12420,7 @@ function IDCardsModule({students, staff, settings, currentUser}){
       <div style="font-size:12px;font-weight:900;color:${ac};line-height:1.2;margin-bottom:4px;">${fullName}</div>
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-size:8px;color:#6B7280;min-width:42px;font-weight:600;">ID No.:</span><span style="font-size:8.5px;font-weight:700;">${idNum}</span></div>
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-size:8px;color:#6B7280;min-width:42px;font-weight:600;">${isStudent?"Class":"Role"}:</span><span style="font-size:8.5px;font-weight:700;">${role}</span></div>
+      ${(!isStudent&&person.username)?`<div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-size:8px;color:#6B7280;min-width:42px;font-weight:600;">Login:</span><span style="font-size:8.5px;font-weight:700;">${person.username}</span></div>`:""}
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-size:8px;color:#6B7280;min-width:42px;font-weight:600;">Issued:</span><span style="font-size:8.5px;font-weight:700;">${issueYear}</span></div>
       ${isStudent?`<div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-size:8px;color:#6B7280;min-width:42px;font-weight:600;">Expires:</span><span style="font-size:8.5px;font-weight:700;">${expiry}</span></div>`:""}
       ${isStudent&&(person.bloodGroup||person.genotype)?`<div style="display:flex;gap:6px;margin-top:3px;">${person.bloodGroup?`<span style="font-size:7.5px;background:${ac};color:#fff;padding:1px 5px;border-radius:3px;font-weight:700;">🩸 ${person.bloodGroup}</span>`:""} ${person.genotype?`<span style="font-size:7.5px;background:#F0C060;color:#1F2937;padding:1px 5px;border-radius:3px;font-weight:700;">${person.genotype}</span>`:""}</div>`:""}
@@ -12408,6 +12604,14 @@ export default function App(){
   const setSettings = makeSynced("settings", _setSettings, true);
   // Wrap setSettings to also backup critical data to localStorage
 
+  // Keep the module-level getCurrentSession()/getCurrentTerm() readers (used
+  // everywhere in place of the old hardcoded CURRENT_SESSION/CURRENT_TERM
+  // constants) in sync whenever root changes them from Settings.
+  useEffect(function(){
+    _liveSession = settings.currentSession || CURRENT_SESSION;
+    _liveTerm = settings.currentTerm || CURRENT_TERM;
+  }, [settings.currentSession, settings.currentTerm]);
+
   const setLessons    = makeSynced("lessons",    _setLessons,    false);
   const setAssignments= makeSynced("assignments",_setAssignments,false);
   const setSubmissions= makeSynced("submissions",_setSubmissions,false);
@@ -12488,13 +12692,13 @@ export default function App(){
           dbHostelInventory, dbHostelConsumption, dbHostelRequests, dbHostelRooms, dbHostelRollcall, dbHostelIncidents,
           dbApplications
         ] = await Promise.all([
-          sbLoad("students"), sbLoad("staff"), sbLoad("attendance"), sbLoad("results"),
-          sbLoad("fees"), sbLoad("expenditure"), sbLoad("lessons"), sbLoad("assignments"),
-          sbLoad("submissions"), sbLoad("messages"), sbLoad("diary"),
-          sbLoad("elibrary"), sbLoad("conduct"), sbLoad("timetable"), sbLoad("promotions"), sbLoad("clinic"),
-          sbLoad("counselling"), sbLoad("exams"), sbLoad("exam_marks"), sbLoad("class_remarks"),
-          sbLoad("hostel_inventory"), sbLoad("hostel_consumption"), sbLoad("hostel_requests"), sbLoad("hostel_rooms"), sbLoad("hostel_rollcall"), sbLoad("hostel_incidents"),
-          sbLoad("admissions")
+          loadIfAllowed("students"), loadIfAllowed("staff"), loadIfAllowed("attendance"), loadIfAllowed("results"),
+          loadIfAllowed("fees"), loadIfAllowed("expenditure"), loadIfAllowed("lessons"), loadIfAllowed("assignments"),
+          loadIfAllowed("submissions"), loadIfAllowed("messages"), loadIfAllowed("diary"),
+          loadIfAllowed("elibrary"), loadIfAllowed("conduct"), loadIfAllowed("timetable"), loadIfAllowed("promotions"), loadIfAllowed("clinic"),
+          loadIfAllowed("counselling"), loadIfAllowed("exams"), loadIfAllowed("exam_marks"), loadIfAllowed("class_remarks"),
+          loadIfAllowed("hostel_inventory"), loadIfAllowed("hostel_consumption"), loadIfAllowed("hostel_requests"), loadIfAllowed("hostel_rooms"), loadIfAllowed("hostel_rollcall"), loadIfAllowed("hostel_incidents"),
+          loadIfAllowed("admissions")
         ]);
 
         if(dbStudents && dbStudents.length)      _setStudents(dbStudents);
@@ -12741,7 +12945,7 @@ export default function App(){
         <div style={S.schoolName}>{SCHOOL_NAME}</div>
         <div style={S.schoolSub}>{SCHOOL_MOTTO}</div>
         <div style={{marginTop:7,background:"rgba(183,134,44,0.15)",borderRadius:6,padding:"3px 9px",display:"inline-block"}}>
-          <span style={{color:C.goldLight,fontSize:9,fontWeight:600}}>{CURRENT_SESSION} · {CURRENT_TERM}</span>
+          <span style={{color:C.goldLight,fontSize:9,fontWeight:600}}>{getCurrentSession()} · {getCurrentTerm()}</span>
         </div>
       </div>
 
@@ -12762,7 +12966,7 @@ export default function App(){
         <div style={{color:"rgba(255,255,255,0.5)",fontSize:9,marginBottom:2}}>Logged in as:</div>
         <div style={{color:C.goldLight,fontSize:11,fontWeight:600}}>{currentUser.name}</div>
         <div style={{...S.badge(isRoot?"gold":"blue"),fontSize:9,marginTop:4,display:"inline-block"}}>{isRoot?"🔑 Root Admin":currentUser.role}</div>
-        <button style={{...S.btn("danger"),fontSize:10,padding:"4px 10px",marginTop:8,display:"block",width:"100%"}} onClick={()=>{setAuthToken(null);setCurrentUser(null);setPage("dashboard");}}>Logout</button>
+        <button style={{...S.btn("danger"),fontSize:10,padding:"4px 10px",marginTop:8,display:"block",width:"100%"}} onClick={()=>{setAuthToken(null);setSessionRole(null);setCurrentUser(null);setPage("dashboard");}}>Logout</button>
       </div>
     </aside>
 
@@ -12776,7 +12980,7 @@ export default function App(){
         </div>
         <div style={S.row}>
           {isRoot&&<span style={{...S.badge("gold"),fontSize:10}}>🔑 Root Admin</span>}
-          <span style={S.sessionBadge}>{CURRENT_SESSION} · {CURRENT_TERM}</span>
+          <span style={S.sessionBadge}>{getCurrentSession()} · {getCurrentTerm()}</span>
         </div>
       </div>
       <div style={S.content(isMobile)}>
@@ -12792,8 +12996,8 @@ export default function App(){
         {page==="timetable"&&(userCanAccess(currentUser,"timetable")?<TimetableModule staff={staff} timetable={timetable} setTimetable={setTimetable} settings={settings}/>:<AccessDenied/>)}
         {page==="idcards"&&(userCanAccess(currentUser,"idcards")?<IDCardsModule students={students} staff={staff} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="diary"&&(userCanAccess(currentUser,"diary")?<DiaryModule students={students} staff={staff} diary={diary} setDiary={setDiary} currentUser={currentUser}/>:<AccessDenied/>)}
-        {page==="gallery"&&(userCanAccess(currentUser,"gallery")?<GalleryModule gallery={gallery} setGallery={setGallery} currentUser={currentUser}/>:<AccessDenied/>)}
-        {page==="elibrary"&&<ELibraryModule elibrary={elibrary} setElibrary={setElibrary} currentUser={currentUser} students={students} staff={staff}/>}
+        {page==="gallery"&&(userCanAccess(currentUser,"gallery")?<GalleryModule gallery={gallery} setGallery={setGallery} currentUser={currentUser} readOnly={currentUser.role==="staff"}/>:<AccessDenied/>)}
+        {page==="elibrary"&&(userCanAccess(currentUser,"elibrary")?<ELibraryModule elibrary={elibrary} setElibrary={setElibrary} currentUser={currentUser} students={students} staff={staff}/>:<AccessDenied/>)}
         {page==="clinic"&&(userCanAccess(currentUser,"clinic")?<ClinicModule students={students} staff={staff} clinic={clinic} setClinic={setClinic} currentUser={currentUser} settings={settings}/>:<AccessDenied/>)}
         {page==="hostel"&&(userCanAccess(currentUser,"hostel")?<HostelModule students={students} staff={staff} settings={settings} currentUser={currentUser}
           hostelInventory={hostelInventory} setHostelInventory={setHostelInventory}
@@ -12811,7 +13015,7 @@ export default function App(){
         {page==="calendar"&&(userCanAccess(currentUser,"calendar")?<CalendarModule students={students} staff={staff} settings={settings} timetable={timetable} lessons={lessons}/>:<AccessDenied/>)}
         {page==="alumni"&&(userCanAccess(currentUser,"alumni")?<AlumniModule students={students} setStudents={setStudents} results={results} settings={settings}/>:<AccessDenied/>)}
         {page==="admissions"&&(userCanAccess(currentUser,"admissions")?<AdmissionsModule students={students} setStudents={setStudents} settings={settings} currentUser={currentUser} applications={applications} setApplications={setApplications}/>:<AccessDenied/>)}
-        {page==="exams"&&(userCanAccess(currentUser,"exams")?<ExamModule students={students} results={results} setResults={setResults} settings={settings} currentUser={currentUser} exams={exams} setExams={setExams} examMarks={examMarks} setExamMarks={setExamMarks} cbtEnabled={cbtEnabled} setCbtEnabled={setCbtEnabled}/>:<AccessDenied/>)}
+        {page==="exams"&&(userCanAccess(currentUser,"exams")?<ExamModule students={students} staff={staff} results={results} setResults={setResults} settings={settings} currentUser={currentUser} exams={exams} setExams={setExams} examMarks={examMarks} setExamMarks={setExamMarks} cbtEnabled={cbtEnabled} setCbtEnabled={setCbtEnabled}/>:<AccessDenied/>)}
         {page==="settings"&&(userCanAccess(currentUser,"settings")?<SettingsModule settings={settings} setSettings={setSettings} currentUser={currentUser} setCurrentUser={setCurrentUser}/>:<AccessDenied/>)}
       </div>
     </main>
