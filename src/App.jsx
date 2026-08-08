@@ -355,7 +355,7 @@ const C = {
 const CLASSES = ["JSS1","JSS2","JSS3","SS1","SS2","SS3"];
 const ARMS = ["A","B","C"];
 const TERMS = ["First Term","Second Term","Third Term"];
-const SESSIONS = ["2022/2023","2023/2024","2024/2025","2025/2026"];
+const SESSIONS = ["2022/2023","2023/2024","2024/2025","2025/2026","2026/2027","2027/2028","2028/2029","2029/2030","2030/2031","2031/2032","2032/2033","2033/2034","2034/2035"];
 // Fallback/seed-data-only defaults — everything else in the app that needs
 // "what session/term is it right now" should call getCurrentSession()/
 // getCurrentTerm() below instead, which reflect the root-admin-editable
