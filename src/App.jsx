@@ -2038,8 +2038,15 @@ function StudentsModule({students,setStudents}){
 // ══════════════════════════════════════════════════════
 // ATTENDANCE — Daily class marking, bulk select, consecutive absence flag
 // ══════════════════════════════════════════════════════
-function AttendanceModule({students,attendance,setAttendance,settings}){
-  const [selCls,setSelCls]=useState("JSS1");
+function AttendanceModule({students,staff,attendance,setAttendance,settings,currentUser}){
+  var isAdmin = currentUser.role==="root"||currentUser.role==="admin"||currentUser.role==="Admin";
+  var myStaffRec = findMyStaffRecord(staff||[], currentUser);
+  // Attendance isn't subject-specific, only class-specific — a non-admin
+  // (e.g. a staff-role login) only sees/marks their own assigned class(es).
+  var restrictScope = !isAdmin && !!myStaffRec;
+  var myClasses = restrictScope ? (myStaffRec.classes||[]) : CLASSES;
+
+  const [selCls,setSelCls]=useState(restrictScope?(myClasses[0]||"JSS1"):"JSS1");
   const [selDate,setSelDate]=useState(today());
   const [selSess,setSelSess]=useState(getCurrentSession());
   const [selTerm,setSelTerm]=useState(getCurrentTerm());
@@ -2095,7 +2102,7 @@ function AttendanceModule({students,attendance,setAttendance,settings}){
   return(<div>
     <div style={{...S.card,marginBottom:14}}>
       <div style={S.grid3}>
-        <div><label style={S.label}>Class</label><select style={{...S.select,width:"100%"}} value={selCls} onChange={e=>setSelCls(e.target.value)}>{CLASSES.map(c=><option key={c}>{c}</option>)}</select></div>
+        <div><label style={S.label}>Class</label><select style={{...S.select,width:"100%"}} value={selCls} onChange={e=>setSelCls(e.target.value)}>{myClasses.map(c=><option key={c}>{c}</option>)}</select></div>
         <div><label style={S.label}>Session</label><select style={{...S.select,width:"100%"}} value={selSess} onChange={e=>setSelSess(e.target.value)}>{SESSIONS.map(s=><option key={s}>{s}</option>)}</select></div>
         <div><label style={S.label}>Term</label><select style={{...S.select,width:"100%"}} value={selTerm} onChange={e=>setSelTerm(e.target.value)}>{TERMS.map(t=><option key={t}>{t}</option>)}</select></div>
       </div>
@@ -12987,7 +12994,7 @@ export default function App(){
         {page==="analytics"&&(userCanAccess(currentUser,"analytics")?<AnalyticsModule students={students} attendance={attendance} results={results} settings={settings}/>:<AccessDenied/>)}
         {page==="dashboard"&&<DashboardHome students={students} results={results} fees={fees} attendance={attendance} staff={staff} settings={settings} currentUser={currentUser} onNavigate={navigate}/>}
         {page==="students"&&(userCanAccess(currentUser,"students")?<StudentsModule students={students} setStudents={setStudents}/>:<AccessDenied/>)}
-        {page==="attendance"&&(userCanAccess(currentUser,"attendance")?<AttendanceModule students={students} attendance={attendance} setAttendance={setAttendance} settings={settings}/>:<AccessDenied/>)}
+        {page==="attendance"&&(userCanAccess(currentUser,"attendance")?<AttendanceModule students={students} staff={staff} attendance={attendance} setAttendance={setAttendance} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="results"&&(userCanAccess(currentUser,"results")?<ResultsModule students={students} results={results} setResults={setResults} settings={settings} staff={staff} currentUser={currentUser} classRemarks={classRemarks} setClassRemarks={setClassRemarks} assignments={assignments} setAssignments={setAssignments}/>:<AccessDenied/>)}
         {page==="lessons"&&(userCanAccess(currentUser,"lessons")?<LessonsModule staff={staff} students={students} lessons={lessons} setLessons={setLessons} assignments={assignments} setAssignments={setAssignments} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="studentportal"&&(userCanAccess(currentUser,"studentportal")?<StudentPortalModule students={students} staff={staff} lessons={lessons} assignments={assignments} submissions={submissions} setSubmissions={setSubmissions} results={results} setResults={setResults} currentUser={currentUser} settings={settings} elibrary={elibrary}/>:<AccessDenied/>)}
