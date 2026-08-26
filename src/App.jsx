@@ -14,6 +14,7 @@ function getSeedMap(){
     elibrary:SEED_ELIBRARY, clinic:SEED_CLINIC, conduct:SEED_CONDUCT,
     timetable:SEED_TIMETABLE, promotions:SEED_PROMOTIONS,
     settings:[SEED_SETTINGS], admins_list:[], school_assets:[],
+    chart_of_accounts:SEED_CHART_OF_ACCOUNTS,
   };
 }
 
@@ -355,7 +356,7 @@ const C = {
 const CLASSES = ["JSS1","JSS2","JSS3","SS1","SS2","SS3"];
 const ARMS = ["A","B","C"];
 const TERMS = ["First Term","Second Term","Third Term"];
-const SESSIONS = ["2022/2023","2023/2024","2024/2025","2025/2026","2026/2027","2027/2028","2028/2029","2029/2030","2030/2031","2031/2032","2032/2033","2033/2034","2034/2035"];
+const SESSIONS = ["2021/2022","2022/2023","2023/2024","2024/2025","2025/2026","2026/2027","2027/2028","2028/2029","2029/2030","2030/2031","2031/2032","2032/2033","2033/2034","2034/2035"];
 // Fallback/seed-data-only defaults — everything else in the app that needs
 // "what session/term is it right now" should call getCurrentSession()/
 // getCurrentTerm() below instead, which reflect the root-admin-editable
@@ -557,6 +558,33 @@ const SEED_EXPENDITURE = [
   {id:"E001",date:"2026-01-10",amount:25000,category:"Maintenance",reason:"Roof repair — Block A",recordedBy:"Admin"},
   {id:"E002",date:"2026-02-05",amount:8500,category:"Stationery",reason:"Exam question papers printing",recordedBy:"Admin"},
   {id:"E003",date:"2026-03-15",amount:15000,category:"Utilities",reason:"PHCN prepaid electricity",recordedBy:"Bursar"},
+];
+
+const SEED_CHART_OF_ACCOUNTS = [
+  {id:"1000",code:"1000",name:"Cash in Hand",type:"Asset",description:"Physical cash held on-site"},
+  {id:"1010",code:"1010",name:"Cash at Bank",type:"Asset",description:"School's bank account balance"},
+  {id:"1100",code:"1100",name:"Fees Receivable",type:"Asset",description:"Unpaid/part-paid student fees owed to the school"},
+  {id:"1200",code:"1200",name:"School Building",type:"Asset",description:"Land and buildings"},
+  {id:"1210",code:"1210",name:"Furniture & Equipment",type:"Asset",description:"Desks, chairs, office/lab equipment"},
+  {id:"1220",code:"1220",name:"Vehicles",type:"Asset",description:"School buses and other vehicles"},
+  {id:"2000",code:"2000",name:"Accounts Payable",type:"Liability",description:"Money owed to suppliers/vendors"},
+  {id:"2010",code:"2010",name:"Salaries Payable",type:"Liability",description:"Staff salaries accrued but not yet paid"},
+  {id:"2020",code:"2020",name:"Loans Payable",type:"Liability",description:"Outstanding loans owed by the school"},
+  {id:"3000",code:"3000",name:"Proprietor's Capital",type:"Equity",description:"Owner's equity in the school"},
+  {id:"3010",code:"3010",name:"Retained Earnings",type:"Equity",description:"Accumulated surplus/deficit carried forward"},
+  {id:"4000",code:"4000",name:"School Fees Income",type:"Income",description:"Tuition and school fees collected"},
+  {id:"4010",code:"4010",name:"Development Levy Income",type:"Income",description:"Development levy collected"},
+  {id:"4020",code:"4020",name:"PTA Levy Income",type:"Income",description:"PTA levy collected"},
+  {id:"4030",code:"4030",name:"Donations & Grants",type:"Income",description:"Donations, grants, and other income"},
+  {id:"5000",code:"5000",name:"Salaries & Wages",type:"Expense",description:"Staff salaries and wages paid"},
+  {id:"5010",code:"5010",name:"Utilities",type:"Expense",description:"Electricity, water, internet"},
+  {id:"5020",code:"5020",name:"Maintenance & Repairs",type:"Expense",description:"Building and equipment upkeep"},
+  {id:"5030",code:"5030",name:"Office Supplies",type:"Expense",description:"Stationery and consumables"},
+  {id:"5040",code:"5040",name:"Transportation",type:"Expense",description:"Fuel and vehicle running costs"},
+  {id:"5050",code:"5050",name:"Food/Catering",type:"Expense",description:"Boarding house feeding costs"},
+  {id:"5060",code:"5060",name:"Security",type:"Expense",description:"Security services and equipment"},
+  {id:"5070",code:"5070",name:"Teaching Materials",type:"Expense",description:"Textbooks, lab materials, teaching aids"},
+  {id:"5990",code:"5990",name:"Other Expenses",type:"Expense",description:"Miscellaneous expenditure not covered above"},
 ];
 
 const SEED_STAFF = [
@@ -1861,7 +1889,11 @@ function StudentsModule({students,setStudents}){
   const [editingStudent,setEditingStudent]=useState(null);
 
   const filtered=students.filter(s=>
-    (!fCls||s.class===fCls)&&(!fType||s.boardingType===fType)&&
+    (s.active!==false)&&(!fCls||s.class===fCls)&&(!fType||s.boardingType===fType)&&
+    (!search||`${s.surname} ${s.firstname} ${s.admissionNo}`.toLowerCase().includes(search.toLowerCase()))
+  );
+  const archived=students.filter(s=>
+    (s.active===false)&&(!fCls||s.class===fCls)&&(!fType||s.boardingType===fType)&&
     (!search||`${s.surname} ${s.firstname} ${s.admissionNo}`.toLowerCase().includes(search.toLowerCase()))
   );
 
@@ -1872,7 +1904,8 @@ function StudentsModule({students,setStudents}){
     else{const yr=form.entrySession.split("/")[0];setStudents(p=>[...p,{...form,id:genId(),admissionNo:admNo(yr,students.length+1)}]);}
     setShowForm(false);
   }
-  function deactivate(id){if(window.confirm("Mark student as graduated/exited?"))setStudents(p=>p.map(s=>s.id===id?{...s,active:false}:s));}
+  function deactivate(id){if(window.confirm("Mark student as graduated/exited? They'll move to the Archive and drop off the active list."))setStudents(p=>p.map(s=>s.id===id?{...s,active:false}:s));}
+  function reactivate(id){if(window.confirm("Reactivate this student back onto the active list?"))setStudents(p=>p.map(s=>s.id===id?{...s,active:true}:s));}
 
   function updateBulkRow(idx,field,value){
     setBulkRows(function(p){return p.map(function(r,i){return i===idx?{...r,[field]:value}:r;});});
@@ -1905,7 +1938,7 @@ function StudentsModule({students,setStudents}){
   return(<div>
     {/* Tab switcher */}
     <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:"2px solid "+C.border}}>
-      {[["list","👨‍🎓 Student List"],["bulk","📋 Bulk Enrolment"]].map(function(pair){
+      {[["list","👨‍🎓 Student List"],["bulk","📋 Bulk Enrolment"],["archive","🗄️ Archive ("+students.filter(function(s){return s.active===false;}).length+")"]].map(function(pair){
         return <button key={pair[0]} onClick={function(){setTab(pair[0]);}} style={{...S.btn(tab===pair[0]?"primary":"secondary"),borderRadius:"6px 6px 0 0",marginBottom:-2,fontSize:11,padding:"6px 14px"}}>{pair[1]}</button>;
       })}
     </div>
@@ -2031,6 +2064,39 @@ function StudentsModule({students,setStudents}){
       </div>
     </div>
   ) : null}
+
+  {tab==="archive" ? <div>
+    <div style={{...S.row,marginBottom:12,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+      <div style={S.row}>
+        <div style={{position:"relative"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)"}}><Icon name="search" size={13} color={C.textMuted}/></span><input style={{...S.input,paddingLeft:27,width:190}} placeholder="Search name/adm. no." value={search} onChange={e=>setSearch(e.target.value)}/></div>
+        <select style={S.select} value={fCls} onChange={e=>setFCls(e.target.value)}><option value="">All Classes</option>{CLASSES.map(c=><option key={c}>{c}</option>)}</select>
+      </div>
+    </div>
+    <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>Students who have graduated or exited the school. They're hidden from the active Student List — use Reactivate if one returns.</div>
+    <div style={S.card}>
+      <div style={{overflowX:"auto"}}>
+      <table style={S.table}><thead><tr>{["Passport","Adm. No.","Full Name","Class","Type","Parent","Phone","Actions"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+      <tbody>
+        {archived.length===0&&<tr><td colSpan={8} style={{...S.td,textAlign:"center",color:C.textMuted,padding:28}}>No archived students.</td></tr>}
+        {archived.map(s=>(
+          <tr key={s.id} style={{background:"#FAFAFA"}}>
+            <td style={{...S.td,width:40}}>{s.passport?<img src={s.passport} alt="" style={{width:32,height:32,borderRadius:4,objectFit:"cover"}}/>:<div style={{width:32,height:32,borderRadius:4,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textMuted}}>—</div>}</td>
+            <td style={S.td}><span style={{fontFamily:"monospace",fontSize:10}}>{s.admissionNo}</span></td>
+            <td style={S.td}><b>{s.surname}</b> {s.firstname} {s.middlename}</td>
+            <td style={S.td}>{s.class}{s.arm}</td>
+            <td style={S.td}><span style={S.badge(s.boardingType==="Boarder"?"blue":"green")}>{s.boardingType}</span></td>
+            <td style={S.td}>{s.parentName}</td>
+            <td style={S.td}>{s.parentPhone}</td>
+            <td style={S.td}><div style={S.row}>
+              <button style={{...S.btn("ghost"),padding:3}} onClick={()=>setViewStu(s)}><Icon name="eye" size={14} color={C.primary}/></button>
+              <button style={{...S.btn("secondary"),padding:"4px 10px",fontSize:11}} onClick={()=>reactivate(s.id)}><span style={S.row}><Icon name="results" size={13}/> Reactivate</span></button>
+            </div></td>
+          </tr>
+        ))}
+      </tbody></table>
+      </div>
+    </div>
+  </div> : null}
 
   </div>);
 }
@@ -2205,7 +2271,7 @@ function AttendanceModule({students,staff,attendance,setAttendance,settings,curr
 // ══════════════════════════════════════════════════════
 // FEES MODULE — Color coded + SMS stubs + Expenditure + Summary
 // ══════════════════════════════════════════════════════
-function FeesModule({students,fees,setFees,expenditure,setExpenditure,settings,currentUser}){
+function FeesModule({students,fees,setFees,expenditure,setExpenditure,chartOfAccounts,setChartOfAccounts,settings,currentUser}){
   var _tab = useState("fees"); var tab = _tab[0]; var setTab = _tab[1];
   var _fSess = useState(getCurrentSession()); var fSess = _fSess[0]; var setFSess = _fSess[1];
   var _fTerm = useState(getCurrentTerm()); var fTerm = _fTerm[0]; var setFTerm = _fTerm[1];
@@ -2218,6 +2284,11 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,settings,c
   var form = _form[0]; var setForm = _form[1];
   var _expForm = useState({date:today(),amount:"",category:"Maintenance",reason:"",recordedBy:(currentUser&&currentUser.name)||"Admin"});
   var expForm = _expForm[0]; var setExpForm = _expForm[1];
+  var _showCoaForm = useState(false); var showCoaForm = _showCoaForm[0]; var setShowCoaForm = _showCoaForm[1];
+  var _coaEditing = useState(null); var coaEditing = _coaEditing[0]; var setCoaEditing = _coaEditing[1];
+  var _coaForm = useState({code:"",name:"",type:"Asset",description:""});
+  var coaForm = _coaForm[0]; var setCoaForm = _coaForm[1];
+  var _coaSearch = useState(""); var coaSearch = _coaSearch[0]; var setCoaSearch = _coaSearch[1];
 
   var FEE_TYPES = ["School Fees","Development Levy","PTA Levy","Exam Fee","Uniform","Books","Transport","Boarding Fee","Extra Lessons","Others"];
   var EXP_CATS = ["Maintenance","Salaries","Utilities","Office Supplies","Events","Transportation","Food/Catering","Security","Others"];
@@ -2279,6 +2350,23 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,settings,c
     setShowExp(false);
     setExpForm({date:today(),amount:"",category:"Maintenance",reason:"",recordedBy:(currentUser&&currentUser.name)||"Admin"});
   }
+
+  var COA_TYPES = ["Asset","Liability","Equity","Income","Expense"];
+
+  function openCoaAdd(){ setCoaEditing(null); setCoaForm({code:"",name:"",type:"Asset",description:""}); setShowCoaForm(true); }
+  function openCoaEdit(acc){ setCoaEditing(acc.id); setCoaForm({code:acc.code||"",name:acc.name||"",type:acc.type||"Asset",description:acc.description||""}); setShowCoaForm(true); }
+  function saveCoa(){
+    if(!coaForm.code.trim()||!coaForm.name.trim()) return alert("Account code and name are required.");
+    var dupe = (chartOfAccounts||[]).find(function(a){return a.code===coaForm.code.trim()&&a.id!==coaEditing;});
+    if(dupe) return alert("An account with code \""+coaForm.code.trim()+"\" already exists.");
+    if(coaEditing){
+      setChartOfAccounts(function(p){return p.map(function(a){return a.id===coaEditing?{...a,...coaForm,code:coaForm.code.trim(),name:coaForm.name.trim()}:a;});});
+    } else {
+      setChartOfAccounts(function(p){return [...p,{...coaForm,code:coaForm.code.trim(),name:coaForm.name.trim(),id:genId()}];});
+    }
+    setShowCoaForm(false);
+  }
+  function deleteCoa(id){ if(window.confirm("Delete this account from the Chart of Accounts?")) setChartOfAccounts(function(p){return p.filter(function(a){return a.id!==id;});}); }
 
   function sendWeeklyReminders(){
     var unpaid = filtered.filter(function(f){return f.status!=="Paid";});
@@ -2388,7 +2476,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
     <div>
       {/* Tabs */}
       <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:"2px solid "+C.border}}>
-        {[["fees","💰 Fee Payments"],["expenditure","📤 Expenditure"],["summary","📊 Summary"]].map(function(pair){
+        {[["fees","💰 Fee Payments"],["expenditure","📤 Expenditure"],["summary","📊 Summary"],["coa","📒 Chart of Accounts"]].map(function(pair){
           return <button key={pair[0]} onClick={function(){setTab(pair[0]);}} style={{...S.btn(tab===pair[0]?"primary":"secondary"),borderRadius:"6px 6px 0 0",marginBottom:-2,fontSize:11,padding:"6px 14px"}}>{pair[1]}</button>;
         })}
       </div>
@@ -2699,6 +2787,59 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
               ])}
             />
           </div>
+        </div>
+      ) : null}
+
+      {/* ── CHART OF ACCOUNTS TAB ── */}
+      {tab==="coa" ? (
+        <div>
+          <div style={{...S.row,marginBottom:12,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+            <div style={{position:"relative"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)"}}><Icon name="search" size={13} color={C.textMuted}/></span><input style={{...S.input,paddingLeft:27,width:220}} placeholder="Search code or name" value={coaSearch} onChange={function(e){setCoaSearch(e.target.value);}}/></div>
+            <button style={S.btn()} onClick={openCoaAdd}><span style={S.row}><Icon name="plus" size={13}/> Add Account</span></button>
+          </div>
+          {COA_TYPES.map(function(t){
+            var rows = (chartOfAccounts||[]).filter(function(a){
+              return a.type===t && (!coaSearch || (a.code+" "+a.name).toLowerCase().includes(coaSearch.toLowerCase()));
+            }).sort(function(a,b){return (a.code||"").localeCompare(b.code||"");});
+            if(!rows.length) return null;
+            return (
+              <div key={t} style={{...S.card,marginBottom:14}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.primaryDark,marginBottom:8}}>{t}s</div>
+                <div style={{overflowX:"auto"}}>
+                <table style={S.table}><thead><tr>{["Code","Account Name","Description","Actions"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
+                <tbody>
+                  {rows.map(function(a){
+                    return (
+                      <tr key={a.id}>
+                        <td style={S.td}><span style={{fontFamily:"monospace",fontSize:11,fontWeight:700}}>{a.code}</span></td>
+                        <td style={S.td}><b>{a.name}</b></td>
+                        <td style={S.td}><span style={{fontSize:11,color:C.textMuted}}>{a.description||"—"}</span></td>
+                        <td style={S.td}><div style={S.row}>
+                          <button style={{...S.btn("ghost"),padding:3}} onClick={function(){openCoaEdit(a);}}><Icon name="edit" size={14} color={C.gold}/></button>
+                          <button style={{...S.btn("ghost"),padding:3}} onClick={function(){deleteCoa(a.id);}}><Icon name="trash" size={14} color={C.danger}/></button>
+                        </div></td>
+                      </tr>
+                    );
+                  })}
+                </tbody></table>
+                </div>
+              </div>
+            );
+          })}
+          {(!chartOfAccounts||!chartOfAccounts.length)&&<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:28}}>No accounts yet. Click "Add Account" to start building your chart of accounts.</div>}
+
+          <Modal open={showCoaForm} onClose={function(){setShowCoaForm(false);}} title={coaEditing?"Edit Account":"Add Account"}>
+            <div style={S.grid2}>
+              <div style={S.formGroup}><label style={S.label}>Account Code *</label><input style={S.input} value={coaForm.code} onChange={function(e){setCoaForm(function(p){return {...p,code:e.target.value};});}} placeholder="e.g. 5030"/></div>
+              <div style={S.formGroup}><label style={S.label}>Type *</label><select style={S.select} value={coaForm.type} onChange={function(e){setCoaForm(function(p){return {...p,type:e.target.value};});}}>{COA_TYPES.map(function(t){return <option key={t}>{t}</option>;})}</select></div>
+            </div>
+            <div style={S.formGroup}><label style={S.label}>Account Name *</label><input style={S.input} value={coaForm.name} onChange={function(e){setCoaForm(function(p){return {...p,name:e.target.value};});}} placeholder="e.g. Office Supplies"/></div>
+            <div style={S.formGroup}><label style={S.label}>Description</label><input style={S.input} value={coaForm.description} onChange={function(e){setCoaForm(function(p){return {...p,description:e.target.value};});}} placeholder="Optional notes"/></div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+              <button style={S.btn("secondary")} onClick={function(){setShowCoaForm(false);}}>Cancel</button>
+              <button style={S.btn()} onClick={saveCoa}>{coaEditing?"Save Changes":"Add Account"}</button>
+            </div>
+          </Modal>
         </div>
       ) : null}
     </div>
@@ -12570,6 +12711,7 @@ export default function App(){
   const [results,_setResults]=useState(SEED_RESULTS);
   const [fees,_setFees]=useState(SEED_FEES);
   const [expenditure,_setExpenditure]=useState(SEED_EXPENDITURE);
+  const [chartOfAccounts,_setChartOfAccounts]=useState(SEED_CHART_OF_ACCOUNTS);
   const [attendance,_setAttendance]=useState(SEED_ATTENDANCE);
   const [conduct,_setConduct]=useState(SEED_CONDUCT);
   const [promotions,_setPromotions]=useState(SEED_PROMOTIONS);
@@ -12602,6 +12744,7 @@ export default function App(){
   const setResults    = makeSynced("results",    _setResults,    false);
   const setFees       = makeSynced("fees",       _setFees,       false);
   const setExpenditure= makeSynced("expenditure",_setExpenditure,false);
+  const setChartOfAccounts = makeSynced("chart_of_accounts", _setChartOfAccounts, false);
   const setAttendance = makeSynced("attendance", _setAttendance, false);
   const setConduct    = makeSynced("conduct",    _setConduct,    false);
   const setPromotions = makeSynced("promotions", _setPromotions, false);
@@ -12697,7 +12840,7 @@ export default function App(){
           dbElibrary, dbConduct, dbTimetable, dbPromotions, dbClinic,
           dbCounselling, dbExams, dbExamMarks, dbClassRemarks,
           dbHostelInventory, dbHostelConsumption, dbHostelRequests, dbHostelRooms, dbHostelRollcall, dbHostelIncidents,
-          dbApplications
+          dbApplications, dbChartOfAccounts
         ] = await Promise.all([
           loadIfAllowed("students"), loadIfAllowed("staff"), loadIfAllowed("attendance"), loadIfAllowed("results"),
           loadIfAllowed("fees"), loadIfAllowed("expenditure"), loadIfAllowed("lessons"), loadIfAllowed("assignments"),
@@ -12705,7 +12848,7 @@ export default function App(){
           loadIfAllowed("elibrary"), loadIfAllowed("conduct"), loadIfAllowed("timetable"), loadIfAllowed("promotions"), loadIfAllowed("clinic"),
           loadIfAllowed("counselling"), loadIfAllowed("exams"), loadIfAllowed("exam_marks"), loadIfAllowed("class_remarks"),
           loadIfAllowed("hostel_inventory"), loadIfAllowed("hostel_consumption"), loadIfAllowed("hostel_requests"), loadIfAllowed("hostel_rooms"), loadIfAllowed("hostel_rollcall"), loadIfAllowed("hostel_incidents"),
-          loadIfAllowed("admissions")
+          loadIfAllowed("admissions"), loadIfAllowed("chart_of_accounts")
         ]);
 
         if(dbStudents && dbStudents.length)      _setStudents(dbStudents);
@@ -12720,6 +12863,8 @@ export default function App(){
         markSynced("fees", dbFees);
         if(dbExpenditure && dbExpenditure.length)_setExpenditure(dbExpenditure);
         markSynced("expenditure", dbExpenditure);
+        if(dbChartOfAccounts && dbChartOfAccounts.length)_setChartOfAccounts(dbChartOfAccounts);
+        markSynced("chart_of_accounts", dbChartOfAccounts);
         if(dbLessons && dbLessons.length)        _setLessons(dbLessons);
         markSynced("lessons", dbLessons);
         if(dbAssignments && dbAssignments.length)_setAssignments(dbAssignments);
@@ -12998,7 +13143,7 @@ export default function App(){
         {page==="results"&&(userCanAccess(currentUser,"results")?<ResultsModule students={students} results={results} setResults={setResults} settings={settings} staff={staff} currentUser={currentUser} classRemarks={classRemarks} setClassRemarks={setClassRemarks} assignments={assignments} setAssignments={setAssignments}/>:<AccessDenied/>)}
         {page==="lessons"&&(userCanAccess(currentUser,"lessons")?<LessonsModule staff={staff} students={students} lessons={lessons} setLessons={setLessons} assignments={assignments} setAssignments={setAssignments} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="studentportal"&&(userCanAccess(currentUser,"studentportal")?<StudentPortalModule students={students} staff={staff} lessons={lessons} assignments={assignments} submissions={submissions} setSubmissions={setSubmissions} results={results} setResults={setResults} currentUser={currentUser} settings={settings} elibrary={elibrary}/>:<AccessDenied/>)}
-        {page==="fees"&&(userCanAccess(currentUser,"fees")?<FeesModule students={students} fees={fees} setFees={setFees} expenditure={expenditure} setExpenditure={setExpenditure} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
+        {page==="fees"&&(userCanAccess(currentUser,"fees")?<FeesModule students={students} fees={fees} setFees={setFees} expenditure={expenditure} setExpenditure={setExpenditure} chartOfAccounts={chartOfAccounts} setChartOfAccounts={setChartOfAccounts} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="staff"&&(userCanAccess(currentUser,"staff")?<StaffModule staff={staff} setStaff={setStaff}/>:<AccessDenied/>)}
         {page==="timetable"&&(userCanAccess(currentUser,"timetable")?<TimetableModule staff={staff} timetable={timetable} setTimetable={setTimetable} settings={settings}/>:<AccessDenied/>)}
         {page==="idcards"&&(userCanAccess(currentUser,"idcards")?<IDCardsModule students={students} staff={staff} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}

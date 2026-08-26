@@ -11,7 +11,8 @@ const ALLOWED_TABLES = [
   "lessons","assignments","submissions","messages","diary","gallery",
   "elibrary","conduct","settings","timetable","promotions","clinic",
   "counselling","exams","exam_marks","admissions","school_assets","class_remarks",
-  "hostel_inventory","hostel_consumption","hostel_requests","hostel_rooms","hostel_rollcall","hostel_incidents"
+  "hostel_inventory","hostel_consumption","hostel_requests","hostel_rooms","hostel_rollcall","hostel_incidents",
+  "chart_of_accounts"
 ];
 
 function isPublicRead(table, method) {
