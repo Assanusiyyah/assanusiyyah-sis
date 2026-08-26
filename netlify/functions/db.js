@@ -11,8 +11,7 @@ const ALLOWED_TABLES = [
   "lessons","assignments","submissions","messages","diary","gallery",
   "elibrary","conduct","settings","timetable","promotions","clinic",
   "counselling","exams","exam_marks","admissions","school_assets","class_remarks",
-  "hostel_inventory","hostel_consumption","hostel_requests","hostel_rooms","hostel_rollcall","hostel_incidents",
-  "chart_of_accounts"
+  "hostel_inventory","hostel_consumption","hostel_requests","hostel_rooms","hostel_rollcall","hostel_incidents"
 ];
 
 // The login screen needs to read these, unauthenticated, before anyone has
@@ -60,12 +59,10 @@ exports.handler = async function(event, context) {
     if (!auth.ok) {
       return { statusCode: auth.statusCode, headers, body: JSON.stringify({ error: auth.error }) };
     }
-    // Parent, candidate, and staff tokens are all scoped (one student/
-    // application, or one staff member's own subjects/classes — see
-    // parent-data.js / candidate-portal.js / staff-data.js) — they must never
-    // reach this generic proxy, which returns/writes whole tables with no
-    // per-row scoping.
-    if (auth.payload.role === "parent" || auth.payload.role === "candidate" || auth.payload.role === "staff") {
+    // Parent and candidate tokens are scoped to exactly one student/application
+    // (see parent-data.js / candidate-portal.js) — they must never reach this
+    // generic proxy, which returns/writes whole tables with no per-row scoping.
+    if (auth.payload.role === "parent" || auth.payload.role === "candidate") {
       return { statusCode: 403, headers, body: JSON.stringify({ error: "Forbidden" }) };
     }
   }
