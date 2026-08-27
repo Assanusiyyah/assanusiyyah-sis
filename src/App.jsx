@@ -1483,6 +1483,7 @@ function SVGPieChart({data, size}){
 
 function AnalyticsModule({students, attendance, results, settings}){
   var rc = getResultConfig(settings);
+  var allClasses = CLASSES.concat(settings.extraClasses||[]);
   var _tab = useState("students");
   var tab = _tab[0]; var setTab = _tab[1];
   var _sc = useState("JSS1");
@@ -1510,7 +1511,7 @@ function AnalyticsModule({students, attendance, results, settings}){
   // DEMOGRAPHICS
   var sexData=[{name:"Male",value:ACTIVE.filter(function(s){return s.gender==="Male";}).length,fill:NAVY},{name:"Female",value:ACTIVE.filter(function(s){return s.gender==="Female";}).length,fill:BRONZE}];
   var boardingData=[{name:"Day",value:ACTIVE.filter(function(s){return s.boardingType==="Day";}).length,fill:BLUE},{name:"Boarder",value:ACTIVE.filter(function(s){return s.boardingType==="Boarder";}).length,fill:GREEN}];
-  var classData=CLASSES.map(function(cls){return{class:cls,label:cls,total:ACTIVE.filter(function(s){return s.class===cls;}).length,male:ACTIVE.filter(function(s){return s.class===cls&&s.gender==="Male";}).length,female:ACTIVE.filter(function(s){return s.class===cls&&s.gender==="Female";}).length,day:ACTIVE.filter(function(s){return s.class===cls&&s.boardingType==="Day";}).length,boarder:ACTIVE.filter(function(s){return s.class===cls&&s.boardingType==="Boarder";}).length};});
+  var classData=allClasses.map(function(cls){return{class:cls,label:cls,total:ACTIVE.filter(function(s){return s.class===cls;}).length,male:ACTIVE.filter(function(s){return s.class===cls&&s.gender==="Male";}).length,female:ACTIVE.filter(function(s){return s.class===cls&&s.gender==="Female";}).length,day:ACTIVE.filter(function(s){return s.class===cls&&s.boardingType==="Day";}).length,boarder:ACTIVE.filter(function(s){return s.class===cls&&s.boardingType==="Boarder";}).length};});
   var ageMap={};
   ACTIVE.forEach(function(s){var r=getAgeRange(getAge(s.dob));ageMap[r]=(ageMap[r]||0)+1;});
   var ageData=AGE_ORDER.filter(function(r){return ageMap[r];}).map(function(r){return{range:r,label:r,total:ageMap[r],male:ACTIVE.filter(function(s){return s.gender==="Male"&&getAgeRange(getAge(s.dob))===r;}).length,female:ACTIVE.filter(function(s){return s.gender==="Female"&&getAgeRange(getAge(s.dob))===r;}).length};});
@@ -1543,7 +1544,7 @@ function AnalyticsModule({students, attendance, results, settings}){
     });
   });
 
-  var classSessionData=CLASSES.map(function(cls){
+  var classSessionData=allClasses.map(function(cls){
     var row={class:cls,label:cls};
     SESSIONS.forEach(function(sess){row[sess.replace("/","–")]=ALL.filter(function(s){return s.entryClass===cls&&s.entrySession===sess;}).length;});
     return row;
@@ -1551,7 +1552,7 @@ function AnalyticsModule({students, attendance, results, settings}){
 
   // SUBJECTS
   var classResults=results.filter(function(r){return r.class===selClass&&r.session===selSess&&r.term===selTerm;});
-  var subjectAnalytics=getSubjects(selClass).map(function(sub){
+  var subjectAnalytics=getSubjects(selClass, settings.extraSubjects).map(function(sub){
     var sr=classResults.filter(function(r){return r.subject===sub;}).map(function(r){return {...r,student:students.find(function(s){return s.id===r.studentId;})};}).filter(function(r){return r.student;});
     if(!sr.length) return null;
     var mA=sr.filter(function(r){return r.student&&r.student.gender==="Male";});
@@ -1563,7 +1564,7 @@ function AnalyticsModule({students, attendance, results, settings}){
   }).filter(function(s){return s!==null;});
 
   // CLASS RESULTS
-  var classResultsOverall=CLASSES.map(function(cls){
+  var classResultsOverall=allClasses.map(function(cls){
     var cs=ACTIVE.filter(function(s){return s.class===cls;});
     var cr=results.filter(function(r){return r.class===cls&&r.session===selSess&&r.term===selTerm;});
     var savgs=cs.map(function(s){var sr=cr.filter(function(r){return r.studentId===s.id;});var a=sr.length?(sr.reduce(function(x,r){return x+r.total;},0)/sr.length):null;return{student:s,avg:a};}).filter(function(s){return s.avg!==null;});
@@ -1612,7 +1613,7 @@ function AnalyticsModule({students, attendance, results, settings}){
     return(
       <div>
         <div style={S.statsGrid}>
-          {[{l:"Total Enrolled",v:ALL.length,bg:"#F5F3FB"},{l:"Active",v:ACTIVE.length,bg:"#F0FDF4"},{l:"Male",v:ACTIVE.filter(function(s){return s.gender==="Male";}).length,bg:"#EFF6FF"},{l:"Female",v:ACTIVE.filter(function(s){return s.gender==="Female";}).length,bg:"#FFF7ED"},{l:"Day",v:ACTIVE.filter(function(s){return s.boardingType==="Day";}).length,bg:"#EFF6FF"},{l:"Boarders",v:ACTIVE.filter(function(s){return s.boardingType==="Boarder";}).length,bg:"#FFFBEB"},{l:"Exited",v:ALL.filter(function(s){return !s.active;}).length,bg:"#FEF2F2"},{l:"Classes",v:CLASSES.length,bg:"#F5F3FB"}].map(function(s,i){return(
+          {[{l:"Total Enrolled",v:ALL.length,bg:"#F5F3FB"},{l:"Active",v:ACTIVE.length,bg:"#F0FDF4"},{l:"Male",v:ACTIVE.filter(function(s){return s.gender==="Male";}).length,bg:"#EFF6FF"},{l:"Female",v:ACTIVE.filter(function(s){return s.gender==="Female";}).length,bg:"#FFF7ED"},{l:"Day",v:ACTIVE.filter(function(s){return s.boardingType==="Day";}).length,bg:"#EFF6FF"},{l:"Boarders",v:ACTIVE.filter(function(s){return s.boardingType==="Boarder";}).length,bg:"#FFFBEB"},{l:"Exited",v:ALL.filter(function(s){return !s.active;}).length,bg:"#FEF2F2"},{l:"Classes",v:allClasses.length,bg:"#F5F3FB"}].map(function(s,i){return(
             <div key={i} style={S.statCard(s.bg)}><div style={{...S.statNum,fontSize:18}}>{s.v}</div><div style={S.statLabel}>{s.l}</div></div>
           );})}
         </div>
@@ -1676,7 +1677,7 @@ function AnalyticsModule({students, attendance, results, settings}){
       <div>
         <div style={{...S.card,marginBottom:14}}>
           <div style={S.grid3}>
-            <div><label style={S.label}>Class</label><select style={{...S.select,width:"100%"}} value={selClass} onChange={function(e){setSelClass(e.target.value);}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+            <div><label style={S.label}>Class</label><select style={{...S.select,width:"100%"}} value={selClass} onChange={function(e){setSelClass(e.target.value);}}>{allClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
             <div><label style={S.label}>Session</label><select style={{...S.select,width:"100%"}} value={selSess} onChange={function(e){setSelSess(e.target.value);}}>{SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
             <div><label style={S.label}>Term</label><select style={{...S.select,width:"100%"}} value={selTerm} onChange={function(e){setSelTerm(e.target.value);}}>{TERMS.map(function(t){return <option key={t}>{t}</option>;})}</select></div>
           </div>
@@ -1972,6 +1973,7 @@ function StudentsModule({students,setStudents,settings}){
 // ATTENDANCE — Daily class marking, bulk select, consecutive absence flag
 // ══════════════════════════════════════════════════════
 function AttendanceModule({students,attendance,setAttendance,settings}){
+  const allClasses = CLASSES.concat(settings?.extraClasses||[]);
   const [selCls,setSelCls]=useState("JSS1");
   const [selDate,setSelDate]=useState(today());
   const [selSess,setSelSess]=useState(CURRENT_SESSION);
@@ -2028,7 +2030,7 @@ function AttendanceModule({students,attendance,setAttendance,settings}){
   return(<div>
     <div style={{...S.card,marginBottom:14}}>
       <div style={S.grid3}>
-        <div><label style={S.label}>Class</label><select style={{...S.select,width:"100%"}} value={selCls} onChange={e=>setSelCls(e.target.value)}>{CLASSES.map(c=><option key={c}>{c}</option>)}</select></div>
+        <div><label style={S.label}>Class</label><select style={{...S.select,width:"100%"}} value={selCls} onChange={e=>setSelCls(e.target.value)}>{allClasses.map(c=><option key={c}>{c}</option>)}</select></div>
         <div><label style={S.label}>Session</label><select style={{...S.select,width:"100%"}} value={selSess} onChange={e=>setSelSess(e.target.value)}>{SESSIONS.map(s=><option key={s}>{s}</option>)}</select></div>
         <div><label style={S.label}>Term</label><select style={{...S.select,width:"100%"}} value={selTerm} onChange={e=>setSelTerm(e.target.value)}>{TERMS.map(t=><option key={t}>{t}</option>)}</select></div>
       </div>
@@ -2132,6 +2134,7 @@ function AttendanceModule({students,attendance,setAttendance,settings}){
 // FEES MODULE — Color coded + SMS stubs + Expenditure + Summary
 // ══════════════════════════════════════════════════════
 function FeesModule({students,fees,setFees,expenditure,setExpenditure,settings,currentUser}){
+  var allClasses = CLASSES.concat(settings?.extraClasses||[]);
   var _tab = useState("fees"); var tab = _tab[0]; var setTab = _tab[1];
   var _fSess = useState(CURRENT_SESSION); var fSess = _fSess[0]; var setFSess = _fSess[1];
   var _fTerm = useState(CURRENT_TERM); var fTerm = _fTerm[0]; var setFTerm = _fTerm[1];
@@ -2334,7 +2337,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                 </select>
                 <select style={S.select} value={fCls} onChange={function(e){setFCls(e.target.value);setFStu("");}}>
                   <option value="">All Classes</option>
-                  {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                  {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
                 </select>
                 {fCls ? (
                   <select style={S.select} value={fStu} onChange={function(e){setFStu(e.target.value);}}>
@@ -2439,7 +2442,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                   <label style={S.label}>Class *</label>
                   <select style={{...S.select,width:"100%"}} value={form.class} onChange={function(e){setForm(function(p){return{...p,class:e.target.value,studentId:""};});}}>
                     <option value="">— Select Class —</option>
-                    {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                    {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
                   </select>
                 </div>
                 <div style={S.formGroup}>
@@ -2570,7 +2573,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:14}}>
-            {CLASSES.map(function(cls){
+            {allClasses.map(function(cls){
               var clsFees = fees.filter(function(f){
                 var stu = students.find(function(s){return s.id===f.studentId;});
                 return f.session===fSess&&f.term===fTerm&&stu&&stu.class===cls;
@@ -2609,7 +2612,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
             <TableActionBar
               title={"Financial Statement - "+fTerm+" "+fSess}
               columns={["Class","Billed","Paid","Collection %","Records"]}
-              rows={CLASSES.map(function(cls){
+              rows={allClasses.map(function(cls){
                 var clsFees = fees.filter(function(f){
                   var stu = students.find(function(s){return s.id===f.studentId;});
                   return f.session===fSess&&f.term===fTerm&&stu&&stu.class===cls;
@@ -3534,8 +3537,9 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
 
 // Isolated from StaffModule's table so typing in this form never
 // re-renders the staff table below it.
-function StaffFormModal({open,staffMember,onSave,onClose}){
+function StaffFormModal({open,staffMember,onSave,onClose,classesOpts,subjectsOpts}){
   const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",phone:"",address:"",qualification:"",nextOfKin:"",nextOfKinPhone:"",subjects:[],classes:[],periodsPerWeek:5,role:"Teacher",active:true,password:""};
+  const classOpts = classesOpts||CLASSES;
   const [form,setForm]=useState(staffMember?{...staffMember}:ef);
   const [selSubs,setSelSubs]=useState(staffMember?(staffMember.subjects||[]):[]);
   const [selCls,setSelCls]=useState(staffMember?(staffMember.classes||[]):[]);
@@ -3548,7 +3552,7 @@ function StaffFormModal({open,staffMember,onSave,onClose}){
     }
   },[open,staffMember]);
 
-  const allSubs=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
+  const allSubs=subjectsOpts||[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
 
   function toggleSub(sub){setSelSubs(p=>p.includes(sub)?p.filter(x=>x!==sub):[...p,sub]);}
   function toggleCls(cls){setSelCls(p=>p.includes(cls)?p.filter(x=>x!==cls):[...p,cls]);}
@@ -3575,7 +3579,7 @@ function StaffFormModal({open,staffMember,onSave,onClose}){
       <div style={S.formGroup}>
         <label style={S.label}>Classes</label>
         <div style={{display:"flex",gap:6}}>
-          {CLASSES.map(cls=><button key={cls} type="button" onClick={()=>toggleCls(cls)} style={{...S.btn(selCls.includes(cls)?"primary":"secondary"),fontSize:11,padding:"4px 10px"}}>{cls}</button>)}
+          {classOpts.map(cls=><button key={cls} type="button" onClick={()=>toggleCls(cls)} style={{...S.btn(selCls.includes(cls)?"primary":"secondary"),fontSize:11,padding:"4px 10px"}}>{cls}</button>)}
         </div>
       </div>
       <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}><button style={S.btn("secondary")} onClick={onClose}>Cancel</button><button style={S.btn()} onClick={handleSave}>{staffMember?"Save Changes":"Add Staff"}</button></div>
@@ -3583,7 +3587,9 @@ function StaffFormModal({open,staffMember,onSave,onClose}){
   );
 }
 
-function StaffModule({staff,setStaff}){
+function StaffModule({staff,setStaff,settings}){
+  const allClasses = CLASSES.concat(settings?.extraClasses||[]);
+  const allSubjects = [...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR,...(settings?.extraSubjects||[])])].sort();
   const [search,setSearch]=useState("");
   const [showForm,setShowForm]=useState(false);
   const [editing,setEditing]=useState(null);
@@ -3632,7 +3638,7 @@ function StaffModule({staff,setStaff}){
       </tbody></table>
     </div>
 
-    <StaffFormModal open={showForm} staffMember={editingStaff} onSave={handleFormSave} onClose={()=>setShowForm(false)}/>
+    <StaffFormModal open={showForm} staffMember={editingStaff} onSave={handleFormSave} onClose={()=>setShowForm(false)} classesOpts={allClasses} subjectsOpts={allSubjects}/>
 
     <Modal open={!!viewStaff} onClose={()=>setViewStaff(null)} title="Staff Profile">
       {viewStaff&&<div>
@@ -3652,7 +3658,7 @@ function StaffModule({staff,setStaff}){
 // TIMETABLE — Auto-generator + Manual editing
 // ══════════════════════════════════════════════════════
 
-function generateTimetable(staff, classes, periodsPerDay) {
+function generateTimetable(staff, classes, periodsPerDay, extraSubjects) {
   var days = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
   var newTT = [];
   var teacherBusy = {};
@@ -3680,7 +3686,7 @@ function generateTimetable(staff, classes, periodsPerDay) {
   var warnings = [];
 
   classes.forEach(function(cls) {
-    var subjects = getSubjects(cls);
+    var subjects = getSubjects(cls, extraSubjects);
     if (!subjects || subjects.length === 0) return;
     var totalSlots = days.length * periodsPerDay;
     var target = Math.max(2, Math.min(4, Math.floor(totalSlots / subjects.length)));
@@ -3737,7 +3743,8 @@ function generateTimetable(staff, classes, periodsPerDay) {
   return { timetable: newTT, warnings: warnings };
 }
 
-function TimetableModule({staff, timetable, setTimetable}){
+function TimetableModule({staff, timetable, setTimetable, settings}){
+  const allClasses = CLASSES.concat(settings?.extraClasses||[]);
   const [selCls, setSelCls] = useState("JSS1");
   const [showForm, setShowForm] = useState(false);
   const [editSlotData, setEditSlotData] = useState(null);
@@ -3775,7 +3782,7 @@ function TimetableModule({staff, timetable, setTimetable}){
     setGenerating(true);
     setTimeout(()=>{
       const kept=timetable.filter(t=>!classesToGen.includes(t.class));
-      const result=generateTimetable(staff,classesToGen,PPD);
+      const result=generateTimetable(staff,classesToGen,PPD,settings?.extraSubjects);
       setTimetable([...kept,...result.timetable]);
       setWarnings(result.warnings);
       setGenerating(false);
@@ -3811,7 +3818,7 @@ function TimetableModule({staff, timetable, setTimetable}){
   }
 
   const conflicts=getConflicts();
-  const classSubjects=getSubjects(selCls);
+  const classSubjects=getSubjects(selCls, settings?.extraSubjects);
   const eligibleTeachers=form.subject
     ?staff.filter(t=>t.active&&(t.subjects||[]).includes(form.subject)&&(t.classes||[]).includes(selCls))
     :staff.filter(t=>t.active&&(t.classes||[]).includes(selCls));
@@ -3829,7 +3836,7 @@ function TimetableModule({staff, timetable, setTimetable}){
           <div style={S.row}>
             <label style={{...S.label,marginBottom:0,marginRight:4}}>Class:</label>
             <select style={{...S.select,width:100}} value={selCls} onChange={e=>setSelCls(e.target.value)}>
-              {CLASSES.map(c=><option key={c}>{c}</option>)}
+              {allClasses.map(c=><option key={c}>{c}</option>)}
             </select>
           </div>
           <div style={S.row}>
@@ -3892,10 +3899,10 @@ function TimetableModule({staff, timetable, setTimetable}){
             <div style={S.cardTitle}>Generate</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
               <div style={{background:"#EFF6FF",border:"2px solid "+C.blue,borderRadius:10,padding:20,cursor:"pointer",textAlign:"center"}}
-                onClick={()=>!generating&&doGenerate(CLASSES)}>
+                onClick={()=>!generating&&doGenerate(allClasses)}>
                 <div style={{fontSize:28,marginBottom:6}}>🏫</div>
                 <div style={{fontWeight:700,fontSize:13,color:C.primaryDark}}>Generate ALL Classes</div>
-                <div style={{fontSize:11,color:C.textMuted,marginTop:4}}>Clears and fills all {CLASSES.length} classes</div>
+                <div style={{fontSize:11,color:C.textMuted,marginTop:4}}>Clears and fills all {allClasses.length} classes</div>
                 {generating&&<div style={{color:C.blue,fontSize:11,marginTop:6,fontWeight:600}}>⏳ Generating...</div>}
               </div>
               <div style={{background:"#FFFBEB",border:"2px solid "+C.gold,borderRadius:10,padding:20,cursor:"pointer",textAlign:"center"}}
@@ -3994,7 +4001,7 @@ function TimetableModule({staff, timetable, setTimetable}){
             <table style={S.table}>
               <thead><tr>{["Class","Filled","Total","Rate","Subjects","View"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
               <tbody>
-                {CLASSES.map(cls=>{
+                {allClasses.map(cls=>{
                   const st=getClassStats(cls);
                   return(
                     <tr key={cls}>
@@ -4084,7 +4091,8 @@ function TimetableModule({staff, timetable, setTimetable}){
 }
 
 
-function MessagesModule({students,staff,messages,setMessages}){
+function MessagesModule({students,staff,messages,setMessages,settings}){
+  const allClasses = CLASSES.concat(settings?.extraClasses||[]);
   const [tab,setTab]=useState("box");
   const [showNew,setShowNew]=useState(false);
   const [compose,setCompose]=useState({title:"",body:"",type:"General"});
@@ -4156,7 +4164,7 @@ function MessagesModule({students,staff,messages,setMessages}){
         <div style={S.cardTitle}>Send Configuration</div>
         <div style={S.grid2}>
           <div style={S.formGroup}><label style={S.label}>Send Mode</label><select style={{...S.select,width:"100%"}} value={sendMode} onChange={e=>setSendMode(e.target.value)}><option value="bulk">Bulk SMS</option><option value="individual">Individual SMS</option></select></div>
-          {sendMode==="bulk"&&<><div style={S.formGroup}><label style={S.label}>Target</label><select style={{...S.select,width:"100%"}} value={targetType} onChange={e=>setTargetType(e.target.value)}><option value="students">Students' Parents</option><option value="staff">Staff</option></select></div><div style={S.formGroup}><label style={S.label}>Filter by Class (optional)</label><select style={{...S.select,width:"100%"}} value={targetClass} onChange={e=>setTargetClass(e.target.value)}><option value="">All Classes</option>{CLASSES.map(c=><option key={c}>{c}</option>)}</select></div></>}
+          {sendMode==="bulk"&&<><div style={S.formGroup}><label style={S.label}>Target</label><select style={{...S.select,width:"100%"}} value={targetType} onChange={e=>setTargetType(e.target.value)}><option value="students">Students' Parents</option><option value="staff">Staff</option></select></div><div style={S.formGroup}><label style={S.label}>Filter by Class (optional)</label><select style={{...S.select,width:"100%"}} value={targetClass} onChange={e=>setTargetClass(e.target.value)}><option value="">All Classes</option>{allClasses.map(c=><option key={c}>{c}</option>)}</select></div></>}
           {sendMode==="individual"&&<><div style={S.formGroup}><label style={S.label}>Student (optional)</label><select style={{...S.select,width:"100%"}} value={selStu} onChange={e=>{setSelStu(e.target.value);setSelStaff("");}}><option value="">-- Select Student --</option>{students.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.surname} {s.firstname}</option>)}</select></div><div style={S.formGroup}><label style={S.label}>Staff (optional)</label><select style={{...S.select,width:"100%"}} value={selStaff} onChange={e=>{setSelStaff(e.target.value);setSelStu("");}}><option value="">-- Select Staff --</option>{staff.map(s=><option key={s.id} value={s.id}>{s.surname} {s.firstname}</option>)}</select></div></>}
         </div>
         <div style={{marginTop:12}}>
@@ -4823,7 +4831,7 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
               <div style={{fontSize:11,fontWeight:700,color:C.textMuted,marginBottom:6}}>Quick Presets:</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {[
-                  {label:"Class Teacher",perms:["dashboard","students","attendance","results","lessons","studentportal","messages"]},
+                  {label:"Class Teacher",perms:["dashboard","students","attendance","results","exams","lessons","studentportal","messages"]},
                   {label:"Bursar",perms:["dashboard","students","fees","messages"]},
                   {label:"Nurse",perms:["dashboard","students","clinic","messages"]},
                   {label:"Counsellor",perms:["dashboard","students","counsellor","welfare","messages"]},
@@ -5098,8 +5106,9 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
 // Isolated from LessonsModule's table so typing in this form (and the AI
 // auto-generate call, which sets several fields at once) never re-renders
 // the lessons table below it.
-function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
-  const allSubjects=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
+function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose, classesOpts, subjectsOpts}){
+  const classOpts = classesOpts||CLASSES;
+  const allSubjects=subjectsOpts||[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
 
   // Minimal input form — what the teacher actually fills before auto-generation
   const emptyForm = {
@@ -5219,7 +5228,7 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
         <div style={{fontWeight:700,color:C.primary,marginBottom:10,fontSize:12,borderBottom:"2px solid "+C.primary,paddingBottom:6}}>📋 LESSON DETAILS</div>
         <div style={S.grid3}>
           <FormField form={form} setForm={setForm} label="Date *" field="date" type="date"/>
-          <FormField form={form} setForm={setForm} label="Class *" field="class" opts={CLASSES}/>
+          <FormField form={form} setForm={setForm} label="Class *" field="class" opts={classOpts}/>
           <FormField form={form} setForm={setForm} label="Arm" field="arm" opts={ARMS}/>
           <div style={S.formGroup}>
             <label style={S.label}>Teacher *</label>
@@ -5328,7 +5337,8 @@ function LessonFormModal({open, lesson, myStaff, staff, onSave, onClose}){
   );
 }
 
-function LessonsModule({staff, students, lessons, setLessons, assignments, setAssignments, currentUser}){
+function LessonsModule({staff, students, lessons, setLessons, assignments, setAssignments, currentUser, settings}){
+  const allClasses = CLASSES.concat(settings?.extraClasses||[]);
   const [tab, setTab] = useState("list");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -5341,7 +5351,7 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
   const isAdmin = currentUser.role==="root"||currentUser.role==="Admin";
   const myStaff = staff.find(s=>s.id===currentUser.staffId||
     (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
-  const allSubjects=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR])].sort();
+  const allSubjects=[...new Set([...SUBJECTS_JNR,...SUBJECTS_SNR,...(settings?.extraSubjects||[])])].sort();
 
   const filtered = lessons.filter(l=>
     (!filterCls||l.class===filterCls) &&
@@ -5392,7 +5402,7 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
     <div style={{...S.row,marginBottom:12,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
       <div style={S.row}>
         <select style={S.select} value={filterCls} onChange={e=>setFilterCls(e.target.value)}>
-          <option value="">All Classes</option>{CLASSES.map(c=><option key={c}>{c}</option>)}
+          <option value="">All Classes</option>{allClasses.map(c=><option key={c}>{c}</option>)}
         </select>
         <select style={S.select} value={filterSub} onChange={e=>setFilterSub(e.target.value)}>
           <option value="">All Subjects</option>{allSubjects.map(s=><option key={s}>{s}</option>)}
@@ -5515,7 +5525,7 @@ function LessonsModule({staff, students, lessons, setLessons, assignments, setAs
       </div>}
     </Modal>
 
-    <LessonFormModal open={showForm} lesson={editingLesson} myStaff={myStaff} staff={staff} onSave={handleFormSave} onClose={()=>setShowForm(false)}/>
+    <LessonFormModal open={showForm} lesson={editingLesson} myStaff={myStaff} staff={staff} onSave={handleFormSave} onClose={()=>setShowForm(false)} classesOpts={allClasses} subjectsOpts={allSubjects}/>
   </div>);
 }
 
@@ -6761,6 +6771,7 @@ function GalleryModule({gallery, setGallery, currentUser, readOnly}){
 // Daily patient list, drug combinations, best practices
 // ══════════════════════════════════════════════════════
 function ClinicModule({students, staff, clinic, setClinic, currentUser, settings}){
+  var allClasses = CLASSES.concat(settings?.extraClasses||[]);
   var _tab = useState("present"); var tab = _tab[0]; var setTab = _tab[1];
   var _search = useState(""); var search = _search[0]; var setSearch = _search[1];
   var _filterDate = useState(""); var filterDate = _filterDate[0]; var setFilterDate = _filterDate[1];
@@ -7225,7 +7236,7 @@ function ClinicModule({students, staff, clinic, setClinic, currentUser, settings
                     <div style={S.formGroup}>
                       <label style={S.label}>Class *</label>
                       <select style={{...S.select,width:"100%"}} value={selClass} onChange={function(e){setSelClass(e.target.value);setSelStudentId("");}}>
-                        {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                        {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
                       </select>
                     </div>
                     <div style={S.formGroup}>
@@ -9252,7 +9263,8 @@ function CalendarModule({students, staff, settings, timetable, lessons}){
   var _selSess = useState(CURRENT_SESSION); var selSess = _selSess[0]; var setSelSess = _selSess[1];
   var _plans = useState({}); var plans = _plans[0]; var setPlans = _plans[1];
 
-  var subjects = getSubjects(selClass);
+  var allClasses = CLASSES.concat(settings?.extraClasses||[]);
+  var subjects = getSubjects(selClass, settings?.extraSubjects);
   var currentSub = selSub || subjects[0] || "";
 
   // School terms typically 13 weeks
@@ -9297,7 +9309,7 @@ function CalendarModule({students, staff, settings, timetable, lessons}){
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             <div style={S.formGroup}><label style={S.label}>Session</label><select style={S.select} value={selSess} onChange={function(e){setSelSess(e.target.value);}}>{SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
             <div style={S.formGroup}><label style={S.label}>Term</label><select style={S.select} value={selTerm} onChange={function(e){setSelTerm(e.target.value);}}>{TERMS.map(function(t){return <option key={t}>{t}</option>;})}</select></div>
-            <div style={S.formGroup}><label style={S.label}>Class</label><select style={S.select} value={selClass} onChange={function(e){setSelClass(e.target.value);setSelSub("");}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+            <div style={S.formGroup}><label style={S.label}>Class</label><select style={S.select} value={selClass} onChange={function(e){setSelClass(e.target.value);setSelSub("");}}>{allClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
             <div style={S.formGroup}><label style={S.label}>Subject</label><select style={S.select} value={currentSub} onChange={function(e){setSelSub(e.target.value);}}>{subjects.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
           </div>
           <button onClick={printPlan} style={S.btn()}>🖨 Print Plan</button>
@@ -9356,6 +9368,7 @@ function CalendarModule({students, staff, settings, timetable, lessons}){
 // Graduated/exited students, university placements, WAEC results
 // ══════════════════════════════════════════════════════
 function AlumniModule({students, setStudents, results, settings}){
+  var allClasses = CLASSES.concat(settings?.extraClasses||[]);
   var _search = useState(""); var search = _search[0]; var setSearch = _search[1];
   var _selYear = useState(""); var selYear = _selYear[0]; var setSelYear = _selYear[1];
   var _showEdit = useState(null); var showEdit = _showEdit[0]; var setShowEdit = _showEdit[1];
@@ -9463,7 +9476,7 @@ function AlumniModule({students, setStudents, results, settings}){
         <Modal open={!!showEdit} onClose={function(){setShowEdit(null);}} title={"Update Alumni — "+showEdit.surname+" "+showEdit.firstname} wide>
           <div style={S.grid2}>
             <div style={S.formGroup}><label style={S.label}>Exit Year</label><input style={S.input} value={editData.exitYear} onChange={function(e){setEditData(function(p){return{...p,exitYear:e.target.value};});}} placeholder="e.g. 2024"/></div>
-            <div style={S.formGroup}><label style={S.label}>Final Class</label><select style={{...S.select,width:"100%"}} value={editData.exitClass} onChange={function(e){setEditData(function(p){return{...p,exitClass:e.target.value};});}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+            <div style={S.formGroup}><label style={S.label}>Final Class</label><select style={{...S.select,width:"100%"}} value={editData.exitClass} onChange={function(e){setEditData(function(p){return{...p,exitClass:e.target.value};});}}>{allClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
             <div style={S.formGroup}><label style={S.label}>Exit Reason</label><select style={{...S.select,width:"100%"}} value={editData.exitReason} onChange={function(e){setEditData(function(p){return{...p,exitReason:e.target.value};});}}>{EXIT_REASONS.map(function(r){return <option key={r}>{r}</option>;})}</select></div>
             <div style={S.formGroup}><label style={S.label}>Contact Phone</label><input style={S.input} value={editData.phone} onChange={function(e){setEditData(function(p){return{...p,phone:e.target.value};});}} placeholder="Personal phone number"/></div>
             <div style={{...S.formGroup,gridColumn:"1/-1"}}><label style={S.label}>WAEC/NECO Result Summary</label><input style={S.input} value={editData.waecResult} onChange={function(e){setEditData(function(p){return{...p,waecResult:e.target.value};});}} placeholder="e.g. 7 credits including Maths and English — 2024"/></div>
@@ -9521,6 +9534,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
   var sessions = counsellingSessions;
   var setSessions = setCounsellingSessions;
   var rc = getResultConfig(settings);
+  var allClasses = CLASSES.concat(settings?.extraClasses||[]);
 
   // ── Patient selection ─────────────────────────────
   var _selClass = useState("JSS1"); var selClass = _selClass[0]; var setSelClass = _selClass[1];
@@ -9885,7 +9899,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
                   <div style={S.formGroup}>
                     <label style={S.label}>Class</label>
                     <select style={{...S.select,width:"100%"}} value={selClass} onChange={function(e){setSelClass(e.target.value);setSelStudentId("");}}>
-                      {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                      {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
                     </select>
                   </div>
                   <div style={S.formGroup}>
@@ -10241,7 +10255,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
           <div style={{...S.card,marginBottom:14}}>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <select style={S.select} value={selClass} onChange={function(e){setSelClass(e.target.value);}}>
-                {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
               </select>
               <div style={{fontSize:11,color:C.textMuted,alignSelf:"center"}}>{classStudents.length} students in {selClass}</div>
             </div>
@@ -10414,6 +10428,7 @@ function CounsellorModule({students, staff, results, conduct, clinic, attendance
 // Reference number generation, SMS notifications
 // ══════════════════════════════════════════════════════
 function AdmissionsModule({students, setStudents, settings, currentUser, applications, setApplications}){
+  var allClasses = CLASSES.concat(settings?.extraClasses||[]);
   var _tab = useState("applications"); var tab = _tab[0]; var setTab = _tab[1];
   var _search = useState(""); var search = _search[0]; var setSearch = _search[1];
   var _filterStatus = useState(""); var filterStatus = _filterStatus[0]; var setFilterStatus = _filterStatus[1];
@@ -10757,7 +10772,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
                     <div>
                       <div style={{fontSize:13,fontWeight:700,color:C.primaryDark,marginBottom:14}}>Application Preferences</div>
                       <div style={S.grid2}>
-                        <div style={S.formGroup}><label style={S.label}>Applying for Class *</label><select style={{...S.select,width:"100%"}} value={appForm.applyingForClass} onChange={function(e){setAppForm(function(p){return{...p,applyingForClass:e.target.value};});}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+                        <div style={S.formGroup}><label style={S.label}>Applying for Class *</label><select style={{...S.select,width:"100%"}} value={appForm.applyingForClass} onChange={function(e){setAppForm(function(p){return{...p,applyingForClass:e.target.value};});}}>{allClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
                         <div style={S.formGroup}><label style={S.label}>Entry Session *</label><select style={{...S.select,width:"100%"}} value={appForm.entrySession} onChange={function(e){setAppForm(function(p){return{...p,entrySession:e.target.value};});}}>{SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
                         <div style={S.formGroup}><label style={S.label}>Boarding Type</label><select style={{...S.select,width:"100%"}} value={appForm.boardingType} onChange={function(e){setAppForm(function(p){return{...p,boardingType:e.target.value};});}}><option>Day</option><option>Boarder</option></select></div>
                         <div style={S.formGroup}><label style={S.label}>How did you hear about us?</label><select style={{...S.select,width:"100%"}} value={appForm.howHeard} onChange={function(e){setAppForm(function(p){return{...p,howHeard:e.target.value};});}}><option value="">— Select —</option>{HOW_HEARD.map(function(h){return <option key={h}>{h}</option>;})}</select></div>
@@ -10825,7 +10840,7 @@ function AdmissionsModule({students, setStudents, settings, currentUser, applica
 // CBT toggle (ready for AssanCBT integration)
 // Score flows to CA1 / CA2 / Exam column
 // ══════════════════════════════════════════════════════
-function ExamModule({students, results, setResults, settings, currentUser, exams, setExams, examMarks, setExamMarks, cbtEnabled, setCbtEnabled}){
+function ExamModule({students, results, setResults, settings, currentUser, staff, exams, setExams, examMarks, setExamMarks, cbtEnabled, setCbtEnabled}){
   var _tab = useState("exams"); var tab = _tab[0]; var setTab = _tab[1];
   var _showCreate = useState(false); var showCreate = _showCreate[0]; var setShowCreate = _showCreate[1];
   var _marking = useState(null); var marking = _marking[0]; var setMarking = _marking[1];
@@ -10835,6 +10850,10 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
   var _reportLoading = useState(false); var reportLoading = _reportLoading[0]; var setReportLoading = _reportLoading[1];
 
   var isAdmin = currentUser.role==="root"||currentUser.role==="admin"||currentUser.role==="Admin";
+  var myStaffRec = (staff||[]).find(function(s){ return (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase(); });
+  var canManageExams = isAdmin || !!myStaffRec;
+  var allClasses = CLASSES.concat(settings.extraClasses||[]);
+  var myClasses = (!isAdmin&&myStaffRec) ? allClasses.filter(function(c){return (myStaffRec.classes||[]).includes(c);}) : allClasses;
 
   // ── Exam creation form ────────────────────────────
   var emptyExam = {
@@ -10883,6 +10902,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
     if(!form.title.trim()) return alert("Exam title is required.");
     if(!form.subject) return alert("Please select a subject.");
     if(!form.questions.length) return alert("Add at least one question.");
+    if(!isAdmin&&myStaffRec&&(!(myStaffRec.classes||[]).includes(form.class)||!(myStaffRec.subjects||[]).includes(form.subject))) return alert("You can only set exams for your own assigned classes and subjects.");
     var totalMarks = form.questions.reduce(function(a,q){return a+(parseFloat(q.marks)||0);},0);
     var exam = {...form, id:genId(), totalMarks:totalMarks, createdBy:currentUser.name, createdAt:today()};
     setExams(function(p){return[exam,...p];});
@@ -11250,7 +11270,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
         {[["exams","📝 All Exams"],["marking","✏️ Mark Exam"]].map(function(pair){
           return <button key={pair[0]} onClick={function(){setTab(pair[0]);setMarking(null);}} style={{...S.btn(tab===pair[0]?"primary":"secondary"),borderRadius:"6px 6px 0 0",marginBottom:-2,fontSize:11,padding:"6px 14px"}}>{pair[1]}</button>;
         })}
-        {isAdmin&&<button onClick={function(){setShowCreate(true);setForm(emptyExam);}} style={{...S.btn("green"),marginLeft:"auto",fontSize:11,marginBottom:4}}>+ Create Exam</button>}
+        {canManageExams&&<button onClick={function(){setShowCreate(true);setForm(!isAdmin&&myClasses.length?{...emptyExam,class:myClasses[0]}:emptyExam);}} style={{...S.btn("green"),marginLeft:"auto",fontSize:11,marginBottom:4}}>+ Create Exam</button>}
       </div>
 
       {/* Marking view */}
@@ -11266,7 +11286,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
             <div style={{...S.card,textAlign:"center",color:C.textMuted,padding:48}}>
               <div style={{fontSize:40,marginBottom:10}}>📝</div>
               <div style={{fontSize:14,fontWeight:600}}>No exams yet</div>
-              {isAdmin&&<div style={{fontSize:12,marginTop:6}}>Click "+ Create Exam" to set up your first exam with theory and objective questions.</div>}
+              {canManageExams&&<div style={{fontSize:12,marginTop:6}}>Click "+ Create Exam" to set up your first exam with theory and objective questions.</div>}
             </div>
           ) : (
             filtered.map(function(exam){
@@ -11309,7 +11329,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
                           {exam.cbtActive?"CBT ON":"CBT OFF"}
                         </button>
                       )}
-                      {isAdmin&&<button onClick={function(){if(window.confirm("Delete this exam?"))setExams(function(p){return p.filter(function(e){return e.id!==exam.id;});});}} style={{...S.btn("danger"),fontSize:10,padding:"4px 10px"}}>🗑</button>}
+                      {(isAdmin||exam.createdBy===currentUser.name)&&<button onClick={function(){if(window.confirm("Delete this exam?"))setExams(function(p){return p.filter(function(e){return e.id!==exam.id;});});}} style={{...S.btn("danger"),fontSize:10,padding:"4px 10px"}}>🗑</button>}
                     </div>
                   </div>
                 </div>
@@ -11334,9 +11354,9 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
               <div style={{fontSize:12,fontWeight:700,color:C.primaryDark,marginBottom:10}}>EXAM DETAILS</div>
               <div style={S.grid2}>
                 <div style={{...S.formGroup,gridColumn:"1/-1"}}><label style={S.label}>Exam Title *</label><input style={S.input} value={form.title} onChange={function(e){setForm(function(p){return{...p,title:e.target.value};});}} placeholder="e.g. First Term Mid-Term Mathematics Examination"/></div>
-                <div style={S.formGroup}><label style={S.label}>Class *</label><select style={{...S.select,width:"100%"}} value={form.class} onChange={function(e){setForm(function(p){return{...p,class:e.target.value};});}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+                <div style={S.formGroup}><label style={S.label}>Class *</label><select style={{...S.select,width:"100%"}} value={form.class} onChange={function(e){setForm(function(p){return{...p,class:e.target.value,subject:""};});}}>{myClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
                 <div style={S.formGroup}><label style={S.label}>Arm</label><select style={{...S.select,width:"100%"}} value={form.arm} onChange={function(e){setForm(function(p){return{...p,arm:e.target.value};});}}>{ARMS.map(function(a){return <option key={a}>{a}</option>;})}</select></div>
-                <div style={S.formGroup}><label style={S.label}>Subject *</label><select style={{...S.select,width:"100%"}} value={form.subject} onChange={function(e){setForm(function(p){return{...p,subject:e.target.value};});}}><option value="">— Select —</option>{getSubjects(form.class).map(function(s){return <option key={s}>{s}</option>;})}</select></div>
+                <div style={S.formGroup}><label style={S.label}>Subject *</label><select style={{...S.select,width:"100%"}} value={form.subject} onChange={function(e){setForm(function(p){return{...p,subject:e.target.value};});}}><option value="">— Select —</option>{(!isAdmin&&myStaffRec?getSubjects(form.class,settings.extraSubjects).filter(function(s){return (myStaffRec.subjects||[]).includes(s);}):getSubjects(form.class,settings.extraSubjects)).map(function(s){return <option key={s}>{s}</option>;})}</select></div>
                 <div style={S.formGroup}><label style={S.label}>Score Column *</label><select style={{...S.select,width:"100%"}} value={form.column} onChange={function(e){setForm(function(p){return{...p,column:e.target.value};});}}>{Object.entries(COLUMN_LABELS).map(function(e){return <option key={e[0]} value={e[0]}>{e[1]}</option>;})}</select></div>
                 <div style={S.formGroup}><label style={S.label}>Exam Date</label><input type="date" style={S.input} value={form.date} onChange={function(e){setForm(function(p){return{...p,date:e.target.value};});}}/></div>
                 <div style={S.formGroup}><label style={S.label}>Duration (minutes)</label><input type="number" style={S.input} value={form.duration} onChange={function(e){setForm(function(p){return{...p,duration:e.target.value};});}} min="10" max="300"/></div>
@@ -11453,6 +11473,7 @@ function ExamModule({students, results, setResults, settings, currentUser, exams
 // one application via a candidate token (see candidate-portal.js).
 // ══════════════════════════════════════════════════════
 function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, submitting, onSubmitApplication, onUpdateApplication, onCancel, onLogout}){
+  var allClasses = CLASSES.concat(settings?.extraClasses||[]);
   var _tab = useState("form"); var tab = _tab[0]; var setTab = _tab[1];
   var _appStep = useState(1); var appStep = _appStep[0]; var setAppStep = _appStep[1];
 
@@ -11532,7 +11553,7 @@ function CandidatePortal({mode, candidateApp, justIssued, settings, gallery, sub
         <div>
           <div style={{fontSize:13,fontWeight:700,color:"#230E6A",marginBottom:14}}>Application Preferences</div>
           <div style={S.grid2}>
-            <div style={S.formGroup}><label style={S.label}>Applying for Class *</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.applyingForClass} onChange={function(e){setForm(function(p){return{...p,applyingForClass:e.target.value};});}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+            <div style={S.formGroup}><label style={S.label}>Applying for Class *</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.applyingForClass} onChange={function(e){setForm(function(p){return{...p,applyingForClass:e.target.value};});}}>{allClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
             <div style={S.formGroup}><label style={S.label}>Entry Session *</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.entrySession} onChange={function(e){setForm(function(p){return{...p,entrySession:e.target.value};});}}>{SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
             <div style={S.formGroup}><label style={S.label}>Boarding Type</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.boardingType} onChange={function(e){setForm(function(p){return{...p,boardingType:e.target.value};});}}><option>Day</option><option>Boarder</option></select></div>
             <div style={S.formGroup}><label style={S.label}>How did you hear about us?</label><select disabled={!editable} style={{...S.select,width:"100%"}} value={form.howHeard} onChange={function(e){setForm(function(p){return{...p,howHeard:e.target.value};});}}><option value="">— Select —</option>{HOW_HEARD.map(function(h){return <option key={h}>{h}</option>;})}</select></div>
@@ -12166,6 +12187,7 @@ function IDCardBack({person, type, settings}){
 }
 
 function IDCardsModule({students, staff, settings, currentUser}){
+  var allClasses = CLASSES.concat(settings?.extraClasses||[]);
   var _type = useState("student"); var cardType = _type[0]; var setCardType = _type[1];
   var _search = useState(""); var search = _search[0]; var setSearch = _search[1];
   var _selClass = useState(""); var selClass = _selClass[0]; var setSelClass = _selClass[1];
@@ -12304,7 +12326,7 @@ function IDCardsModule({students, staff, settings, currentUser}){
             {cardType==="student" ? (
               <select style={S.select} value={selClass} onChange={function(e){setSelClass(e.target.value);}}>
                 <option value="">All Classes</option>
-                {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
               </select>
             ) : (
               <select style={S.select} value={selRole} onChange={function(e){setSelRole(e.target.value);}}>
@@ -12792,10 +12814,10 @@ export default function App(){
         {page==="students"&&(userCanAccess(currentUser,"students")?<StudentsModule students={students} setStudents={setStudents} settings={settings}/>:<AccessDenied/>)}
         {page==="attendance"&&(userCanAccess(currentUser,"attendance")?<AttendanceModule students={students} attendance={attendance} setAttendance={setAttendance} settings={settings}/>:<AccessDenied/>)}
         {page==="results"&&(userCanAccess(currentUser,"results")?<ResultsModule students={students} results={results} setResults={setResults} settings={settings} staff={staff} currentUser={currentUser} classRemarks={classRemarks} setClassRemarks={setClassRemarks} assignments={assignments} setAssignments={setAssignments}/>:<AccessDenied/>)}
-        {page==="lessons"&&(userCanAccess(currentUser,"lessons")?<LessonsModule staff={staff} students={students} lessons={lessons} setLessons={setLessons} assignments={assignments} setAssignments={setAssignments} currentUser={currentUser}/>:<AccessDenied/>)}
+        {page==="lessons"&&(userCanAccess(currentUser,"lessons")?<LessonsModule staff={staff} students={students} lessons={lessons} setLessons={setLessons} assignments={assignments} setAssignments={setAssignments} currentUser={currentUser} settings={settings}/>:<AccessDenied/>)}
         {page==="studentportal"&&(userCanAccess(currentUser,"studentportal")?<StudentPortalModule students={students} staff={staff} lessons={lessons} assignments={assignments} submissions={submissions} setSubmissions={setSubmissions} results={results} setResults={setResults} currentUser={currentUser} settings={settings} elibrary={elibrary}/>:<AccessDenied/>)}
         {page==="fees"&&(userCanAccess(currentUser,"fees")?<FeesModule students={students} fees={fees} setFees={setFees} expenditure={expenditure} setExpenditure={setExpenditure} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
-        {page==="staff"&&(userCanAccess(currentUser,"staff")?<StaffModule staff={staff} setStaff={setStaff}/>:<AccessDenied/>)}
+        {page==="staff"&&(userCanAccess(currentUser,"staff")?<StaffModule staff={staff} setStaff={setStaff} settings={settings}/>:<AccessDenied/>)}
         {page==="timetable"&&(userCanAccess(currentUser,"timetable")?<TimetableModule staff={staff} timetable={timetable} setTimetable={setTimetable} settings={settings}/>:<AccessDenied/>)}
         {page==="idcards"&&(userCanAccess(currentUser,"idcards")?<IDCardsModule students={students} staff={staff} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="diary"&&(userCanAccess(currentUser,"diary")?<DiaryModule students={students} staff={staff} diary={diary} setDiary={setDiary} currentUser={currentUser}/>:<AccessDenied/>)}
@@ -12811,14 +12833,14 @@ export default function App(){
           hostelIncidents={hostelIncidents} setHostelIncidents={setHostelIncidents}
           expenditure={expenditure} setExpenditure={setExpenditure}
         />:<AccessDenied/>)}
-        {page==="messages"&&(userCanAccess(currentUser,"messages")?<MessagesModule students={students} staff={staff} messages={messages} setMessages={setMessages}/>:<AccessDenied/>)}
+        {page==="messages"&&(userCanAccess(currentUser,"messages")?<MessagesModule students={students} staff={staff} messages={messages} setMessages={setMessages} settings={settings}/>:<AccessDenied/>)}
         {page==="counsellor"&&(userCanAccess(currentUser,"counsellor")?<CounsellorModule students={students} staff={staff} results={results} conduct={conduct} clinic={clinic} attendance={attendance} settings={settings} currentUser={currentUser} counsellingSessions={counsellingSessions} setCounsellingSessions={setCounsellingSessions}/>:<AccessDenied/>)}
         {page==="welfare"&&(userCanAccess(currentUser,"welfare")?<WelfareModule students={students} staff={staff} conduct={conduct} setConduct={setConduct} messages={messages} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="payroll"&&(userCanAccess(currentUser,"payroll")?<PayrollModule staff={staff} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="calendar"&&(userCanAccess(currentUser,"calendar")?<CalendarModule students={students} staff={staff} settings={settings} timetable={timetable} lessons={lessons}/>:<AccessDenied/>)}
         {page==="alumni"&&(userCanAccess(currentUser,"alumni")?<AlumniModule students={students} setStudents={setStudents} results={results} settings={settings}/>:<AccessDenied/>)}
         {page==="admissions"&&(userCanAccess(currentUser,"admissions")?<AdmissionsModule students={students} setStudents={setStudents} settings={settings} currentUser={currentUser} applications={applications} setApplications={setApplications}/>:<AccessDenied/>)}
-        {page==="exams"&&(userCanAccess(currentUser,"exams")?<ExamModule students={students} results={results} setResults={setResults} settings={settings} currentUser={currentUser} exams={exams} setExams={setExams} examMarks={examMarks} setExamMarks={setExamMarks} cbtEnabled={cbtEnabled} setCbtEnabled={setCbtEnabled}/>:<AccessDenied/>)}
+        {page==="exams"&&(userCanAccess(currentUser,"exams")?<ExamModule students={students} results={results} setResults={setResults} settings={settings} currentUser={currentUser} staff={staff} exams={exams} setExams={setExams} examMarks={examMarks} setExamMarks={setExamMarks} cbtEnabled={cbtEnabled} setCbtEnabled={setCbtEnabled}/>:<AccessDenied/>)}
         {page==="settings"&&(userCanAccess(currentUser,"settings")?<SettingsModule settings={settings} setSettings={setSettings} currentUser={currentUser} setCurrentUser={setCurrentUser}/>:<AccessDenied/>)}
       </div>
     </main>
