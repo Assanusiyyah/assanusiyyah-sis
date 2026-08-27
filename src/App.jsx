@@ -363,11 +363,16 @@ const EXAM_EXIT_CLASSES = ["JSS3","SS3"];
 // admin can rearrange this in Settings > Classes & Subjects to place custom
 // classes (e.g. KG1, Primary One) correctly - falls back to the built-in
 // CLASSES followed by any extraClasses (in the order they were added) when
-// nothing has been explicitly arranged yet.
+// nothing has been explicitly arranged yet. Any class created *after* the
+// order was last saved - built-in or custom - gets appended at the end
+// automatically, so a newly-added class is never silently left out of
+// promotion just because it didn't exist yet when the order was arranged.
 function getClassOrder(settings){
+  var all = CLASSES.concat((settings&&settings.extraClasses)||[]);
   var stored = (settings&&settings.classOrder)||[];
-  if(stored.length) return stored;
-  return CLASSES.concat((settings&&settings.extraClasses)||[]);
+  if(!stored.length) return all;
+  var missing = all.filter(function(c){return stored.indexOf(c)===-1;});
+  return missing.length ? stored.concat(missing) : stored;
 }
 const ARMS = ["A","B","C"];
 const TERMS = ["First Term","Second Term","Third Term"];
