@@ -336,7 +336,10 @@ const PERIODS = [1,2,3,4,5,6,7,8];
 
 const SUBJECTS_JNR = ["English Language","Mathematics","Basic Science","Basic Technology","Social Studies","Civic Education","Agricultural Science","CRS / Islamic Studies","Business Studies","French","PHE","Fine Arts","Music","Computer Studies"];
 const SUBJECTS_SNR = ["English Language","Mathematics","Further Mathematics","Physics","Chemistry","Biology","Agricultural Science","Economics","Government","Commerce","Accounting","Civic Education","Geography","CRS / Islamic Studies","Literature in English","Computer Studies","PHE"];
-function getSubjects(cls) { return ["JSS1","JSS2","JSS3"].includes(cls) ? SUBJECTS_JNR : SUBJECTS_SNR; }
+function getSubjects(cls, extra) {
+  var base = ["JSS1","JSS2","JSS3"].includes(cls) ? SUBJECTS_JNR : SUBJECTS_SNR;
+  return extra && extra.length ? base.concat(extra) : base;
+}
 
 function genId() { return Math.random().toString(36).substr(2,9).toUpperCase(); }
 function admNo(yr, seq) { return `ASS/${yr}/${String(seq).padStart(4,"0")}`; }
@@ -1721,8 +1724,9 @@ function AnalyticsModule({students, attendance, results, settings}){
 // ══════════════════════════════════════════════════════
 // Isolated from StudentsModule's table so typing in this form never
 // re-renders the (potentially large, photo-heavy) student table below it.
-function StudentFormModal({open,student,onSave,onClose}){
+function StudentFormModal({open,student,onSave,onClose,classesOpts}){
   const ef={surname:"",firstname:"",middlename:"",dob:"",gender:"Male",class:"JSS1",arm:"A",entryClass:"JSS1",entrySession:CURRENT_SESSION,parentName:"",parentPhone:"",parentEmail:"",address:"",religion:"Islam",bloodGroup:"O+",genotype:"AA",boardingType:"Day",phone:"",passport:"",active:true,examExtraMinutes:0};
+  const classOpts = classesOpts||CLASSES;
   const [form,setForm]=useState(student?{...student}:ef);
   const passRef=useRef();
 
@@ -1757,8 +1761,8 @@ function StudentFormModal({open,student,onSave,onClose}){
         </div>
       </div>
       <div style={S.grid3}><FormField form={form} setForm={setForm} label="Gender" field="gender" opts={["Male","Female"]}/><FormField form={form} setForm={setForm} label="Religion" field="religion" opts={["Islam","Christianity","Others"]}/><FormField form={form} setForm={setForm} label="Boarding Type" field="boardingType" opts={["Day","Boarder"]}/></div>
-      <div style={S.grid4}><FormField form={form} setForm={setForm} label="Blood Group" field="bloodGroup" opts={["A+","A-","B+","B-","AB+","AB-","O+","O-"]}/><FormField form={form} setForm={setForm} label="Genotype" field="genotype" opts={["AA","AS","SS","AC","SC"]}/><FormField form={form} setForm={setForm} label="Class" field="class" opts={CLASSES}/><FormField form={form} setForm={setForm} label="Arm" field="arm" opts={ARMS}/></div>
-      <div style={S.grid3}><FormField form={form} setForm={setForm} label="Entry Class" field="entryClass" opts={CLASSES}/><FormField form={form} setForm={setForm} label="Entry Session" field="entrySession" opts={SESSIONS}/><FormField form={form} setForm={setForm} label="Student Phone" field="phone"/></div>
+      <div style={S.grid4}><FormField form={form} setForm={setForm} label="Blood Group" field="bloodGroup" opts={["A+","A-","B+","B-","AB+","AB-","O+","O-"]}/><FormField form={form} setForm={setForm} label="Genotype" field="genotype" opts={["AA","AS","SS","AC","SC"]}/><FormField form={form} setForm={setForm} label="Class" field="class" opts={classOpts}/><FormField form={form} setForm={setForm} label="Arm" field="arm" opts={ARMS}/></div>
+      <div style={S.grid3}><FormField form={form} setForm={setForm} label="Entry Class" field="entryClass" opts={classOpts}/><FormField form={form} setForm={setForm} label="Entry Session" field="entrySession" opts={SESSIONS}/><FormField form={form} setForm={setForm} label="Student Phone" field="phone"/></div>
       <div style={S.grid2}><FormField form={form} setForm={setForm} label="Parent/Guardian Name" field="parentName"/><FormField form={form} setForm={setForm} label="Parent Phone" field="parentPhone"/></div>
       <div style={S.grid2}><FormField form={form} setForm={setForm} label="Parent Email" field="parentEmail"/><div style={S.formGroup}><label style={S.label}>Home Address</label><input style={S.input} value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div></div>
       <div style={{...S.formGroup,background:"#EFF6FF",borderRadius:8,padding:"6px 8px",border:"1px solid #93C5FD",maxWidth:260}}>
@@ -1771,7 +1775,8 @@ function StudentFormModal({open,student,onSave,onClose}){
   );
 }
 
-function StudentsModule({students,setStudents}){
+function StudentsModule({students,setStudents,settings}){
+  const allClasses = CLASSES.concat(settings?.extraClasses||[]);
   const [tab,setTab]=useState("list");
   const [search,setSearch]=useState("");
   const [fCls,setFCls]=useState("");
@@ -1842,7 +1847,7 @@ function StudentsModule({students,setStudents}){
     <div style={{...S.row,marginBottom:12,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
       <div style={S.row}>
         <div style={{position:"relative"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)"}}><Icon name="search" size={13} color={C.textMuted}/></span><input style={{...S.input,paddingLeft:27,width:190}} placeholder="Search name/adm. no." value={search} onChange={e=>setSearch(e.target.value)}/></div>
-        <select style={S.select} value={fCls} onChange={e=>setFCls(e.target.value)}><option value="">All Classes</option>{CLASSES.map(c=><option key={c}>{c}</option>)}</select>
+        <select style={S.select} value={fCls} onChange={e=>setFCls(e.target.value)}><option value="">All Classes</option>{allClasses.map(c=><option key={c}>{c}</option>)}</select>
         <select style={S.select} value={fType} onChange={e=>setFType(e.target.value)}><option value="">All Types</option><option>Day</option><option>Boarder</option></select>
       </div>
       <button style={S.btn()} onClick={openAdd}><span style={S.row}><Icon name="plus" size={13}/> Enrol Student</span></button>
@@ -1881,7 +1886,7 @@ function StudentsModule({students,setStudents}){
       </div>
     </div>
 
-    <StudentFormModal open={showForm} student={editingStudent} onSave={handleFormSave} onClose={()=>setShowForm(false)}/>
+    <StudentFormModal open={showForm} student={editingStudent} onSave={handleFormSave} onClose={()=>setShowForm(false)} classesOpts={allClasses}/>
 
     <Modal open={!!viewStu} onClose={()=>setViewStu(null)} title="Student Profile" wide>
       {viewStu&&<div>
@@ -1904,7 +1909,7 @@ function StudentsModule({students,setStudents}){
       <div style={{...S.card,marginBottom:14}}>
         <div style={{fontSize:13,fontWeight:700,color:C.primaryDark,marginBottom:12}}>📋 Bulk Enrolment — Fill the spreadsheet below</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
-          <div style={S.formGroup}><label style={S.label}>Class</label><select style={S.select} value={bulkClass} onChange={function(e){setBulkClass(e.target.value);}}>{CLASSES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+          <div style={S.formGroup}><label style={S.label}>Class</label><select style={S.select} value={bulkClass} onChange={function(e){setBulkClass(e.target.value);}}>{allClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
           <div style={S.formGroup}><label style={S.label}>Arm</label><select style={S.select} value={bulkArm} onChange={function(e){setBulkArm(e.target.value);}}>{["A","B","C","D","E"].map(function(a){return <option key={a}>{a}</option>;})}</select></div>
           <div style={S.formGroup}><label style={S.label}>Entry Session</label><select style={S.select} value={bulkSession} onChange={function(e){setBulkSession(e.target.value);}}>{SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}</select></div>
           <div style={{fontSize:11,color:C.textMuted,alignSelf:"flex-end",paddingBottom:6}}>Enrol into: <b>{bulkClass}{bulkArm}</b> · Session: <b>{bulkSession}</b></div>
@@ -2644,7 +2649,8 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
 
   var isAdmin = currentUser.role==="root"||currentUser.role==="admin"||currentUser.role==="Admin";
   var ARMS = ["A","B","C","D","E"];
-  var subjects = getSubjects(selClass);
+  var allClasses = CLASSES.concat(settings.extraClasses||[]);
+  var subjects = getSubjects(selClass, settings.extraSubjects);
   if(selSub==="") { var firstSub = subjects[0]||""; }
   var rc = getResultConfig(settings);
   var myStaffRec = staff.find(function(s){ return (s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase(); });
@@ -2952,7 +2958,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
             <div style={S.formGroup}>
               <label style={S.label}>Class</label>
               <select style={S.select} value={selClass} onChange={function(e){setSelClass(e.target.value);setSelSub("");}}>
-                {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
               </select>
             </div>
             <div style={S.formGroup}>
@@ -3068,7 +3074,7 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
                 {TERMS.map(function(t){return <option key={t}>{t}</option>;})}
               </select>
               <select style={S.select} value={selClass} onChange={function(e){setSelClass(e.target.value);}}>
-                {CLASSES.map(function(c){return <option key={c}>{c}</option>;})}
+                {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
               </select>
               <select style={S.select} value={selArm} onChange={function(e){setSelArm(e.target.value);}}>
                 {ARMS.map(function(a){return <option key={a}>{a}</option>;})}
@@ -3421,9 +3427,9 @@ function ResultsModule({students, results, setResults, settings, staff, currentU
       });
     }
     var rowsData = [];
-    CLASSES.forEach(function(cls){
+    allClasses.forEach(function(cls){
       var clsStudents = students.filter(function(s){return s.active && s.class===cls;});
-      var clsSubjects = getSubjects(cls);
+      var clsSubjects = getSubjects(cls, settings.extraSubjects);
       clsSubjects.forEach(function(sub){
         var clsResults = results.filter(function(r){return r.class===cls && r.subject===sub && r.term===selTerm && r.session===selSess;});
         var enteredCount = clsStudents.filter(function(s){
@@ -5543,9 +5549,10 @@ function StudentPortalModule({students, staff, lessons, assignments, submissions
   const isTeacherOrAdmin = currentUser.role==="root"||currentUser.role==="Admin"||currentUser.role==="Teacher";
   const myStaff = staff.find(s=>(s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
   const myStudent = students.find(s=>(s.surname+" "+s.firstname).toLowerCase()===currentUser.name.toLowerCase());
+  const allClasses = CLASSES.concat(settings?.extraClasses||[]);
 
   const accessibleClasses = isTeacherOrAdmin
-    ? (currentUser.role==="root"||currentUser.role==="Admin"?CLASSES:(myStaff?.classes||CLASSES))
+    ? (currentUser.role==="root"||currentUser.role==="Admin"?allClasses:(myStaff?.classes||allClasses))
     : (myStudent?[myStudent.class]:[]);
 
   const [selCls, setSelCls] = useState(accessibleClasses[0]||"JSS1");
@@ -12782,7 +12789,7 @@ export default function App(){
       <div style={S.content(isMobile)}>
         {page==="analytics"&&(userCanAccess(currentUser,"analytics")?<AnalyticsModule students={students} attendance={attendance} results={results} settings={settings}/>:<AccessDenied/>)}
         {page==="dashboard"&&<DashboardHome students={students} results={results} fees={fees} attendance={attendance} staff={staff} settings={settings} currentUser={currentUser} onNavigate={navigate}/>}
-        {page==="students"&&(userCanAccess(currentUser,"students")?<StudentsModule students={students} setStudents={setStudents}/>:<AccessDenied/>)}
+        {page==="students"&&(userCanAccess(currentUser,"students")?<StudentsModule students={students} setStudents={setStudents} settings={settings}/>:<AccessDenied/>)}
         {page==="attendance"&&(userCanAccess(currentUser,"attendance")?<AttendanceModule students={students} attendance={attendance} setAttendance={setAttendance} settings={settings}/>:<AccessDenied/>)}
         {page==="results"&&(userCanAccess(currentUser,"results")?<ResultsModule students={students} results={results} setResults={setResults} settings={settings} staff={staff} currentUser={currentUser} classRemarks={classRemarks} setClassRemarks={setClassRemarks} assignments={assignments} setAssignments={setAssignments}/>:<AccessDenied/>)}
         {page==="lessons"&&(userCanAccess(currentUser,"lessons")?<LessonsModule staff={staff} students={students} lessons={lessons} setLessons={setLessons} assignments={assignments} setAssignments={setAssignments} currentUser={currentUser}/>:<AccessDenied/>)}
