@@ -1,1 +1,11 @@
-/*    /index.html   200
+/api/db                 /.netlify/functions/db                 200
+/api/admin              /.netlify/functions/admin              200
+/api/sms                /.netlify/functions/sms                200
+/api/ai                 /.netlify/functions/ai                 200
+/api/login              /.netlify/functions/login              200
+/api/parent-login       /.netlify/functions/parent-login        200
+/api/parent-data        /.netlify/functions/parent-data         200
+/api/exam               /.netlify/functions/exam-attempt        200
+/api/parent-assignment  /.netlify/functions/parent-assignment   200
+/api/candidate          /.netlify/functions/candidate-portal    200
+/*                       /index.html                             200
