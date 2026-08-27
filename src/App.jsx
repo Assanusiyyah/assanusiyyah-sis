@@ -354,6 +354,21 @@ const C = {
 
 // ─── CONSTANTS ────────────────────────────────────────────
 const CLASSES = ["JSS1","JSS2","JSS3","SS1","SS2","SS3"];
+// JSS3 (BECE) and SS3 (WASSCE) students spend markedly less time in school
+// during their final term because of external exam leave - session-end
+// promotion exempts these two from the attendance-percentage rule and
+// always advances them (JSS3 -> next class, SS3 -> graduates to Archive).
+const EXAM_EXIT_CLASSES = ["JSS3","SS3"];
+// The order students move through classes at session-end promotion. Root
+// admin can rearrange this in Settings > Classes & Subjects to place custom
+// classes (e.g. KG1, Primary One) correctly - falls back to the built-in
+// CLASSES followed by any extraClasses (in the order they were added) when
+// nothing has been explicitly arranged yet.
+function getClassOrder(settings){
+  var stored = (settings&&settings.classOrder)||[];
+  if(stored.length) return stored;
+  return CLASSES.concat((settings&&settings.extraClasses)||[]);
+}
 const ARMS = ["A","B","C"];
 const TERMS = ["First Term","Second Term","Third Term"];
 const SESSIONS = ["2021/2022","2022/2023","2023/2024","2024/2025","2025/2026","2026/2027","2027/2028","2028/2029","2029/2030","2030/2031","2031/2032","2032/2033","2033/2034","2034/2035"];
@@ -713,6 +728,9 @@ const SEED_SETTINGS = {
   ],
   extraClasses: [],
   extraSubjects: [],
+  // Session-end promotion order (see getClassOrder()) - empty means "not
+  // arranged yet, fall back to CLASSES + extraClasses in add order".
+  classOrder: [],
   resultConfig: DEFAULT_RESULT_CONFIG,
   resultsPublished: {},
   feeStructure: {},
@@ -722,6 +740,62 @@ const SEED_SETTINGS = {
   medicalRequirements: "",
   hostelRequiredItems: [],
 };
+
+// ── Session-end promotion engine ──────────────────────
+// Runs once, when root changes settings.currentSession to a new value (see
+// SettingsModule's saveSessionTerm). Every active student is either:
+//  - promoted to the next class in getClassOrder(settings), or
+//  - archived (active:false) as "Graduated" if they were already in the
+//    last class of that order, or
+//  - archived as "Low Attendance" if their attendance in the ending
+//    session's most recent term was below 20% (JSS3/SS3 are exempt - see
+//    EXAM_EXIT_CLASSES - since exam leave depresses their attendance).
+// Never touches attendance/results/fees records - only the student's own
+// active/class fields - so every archived student's history stays intact
+// and reachable exactly as StudentsModule's Archive tab already relies on.
+function computeSessionPromotion(students, attendance, settings, fromSession, fromTerm){
+  var order = getClassOrder(settings);
+  var updatedStudents = [];
+  var newPromotions = [];
+  var summary = {promoted:0, graduated:0, archivedLowAttendance:0, promotedNoData:0, skippedUnknownClass:0};
+
+  students.forEach(function(s){
+    if(s.active===false){ updatedStudents.push(s); return; }
+    var idx = order.indexOf(s.class);
+    if(idx===-1){
+      // Class isn't in the arranged order (e.g. a custom class nobody has
+      // placed yet) - leave the student exactly as they are rather than
+      // guess, and flag it so root can fix the order and re-run manually.
+      summary.skippedUnknownClass++;
+      updatedStudents.push(s);
+      return;
+    }
+
+    var isExamExit = EXAM_EXIT_CLASSES.indexOf(s.class)!==-1;
+    var records = attendance.filter(function(a){return a.studentId===s.id && a.session===fromSession && a.term===fromTerm;});
+    var pct = records.length ? (records.filter(function(a){return a.present;}).length/records.length*100) : null;
+    var lowAttendance = !isExamExit && pct!==null && pct<20;
+    if(pct===null && !isExamExit) summary.promotedNoData++;
+
+    var nextClass = order[idx+1]||null;
+
+    if(lowAttendance){
+      updatedStudents.push({...s, active:false, exitReason:"Low Attendance", exitSession:fromSession, exitClass:s.class, exitAttendancePct:Math.round(pct)});
+      newPromotions.push({id:genId(), studentId:s.id, fromSession:fromSession, fromClass:s.class, toClass:null, status:"Archived — Low Attendance ("+Math.round(pct)+"%)"});
+      summary.archivedLowAttendance++;
+    } else if(!nextClass){
+      updatedStudents.push({...s, active:false, exitReason:"Graduated", exitSession:fromSession, exitClass:s.class});
+      newPromotions.push({id:genId(), studentId:s.id, fromSession:fromSession, fromClass:s.class, toClass:null, status:"Graduated"});
+      summary.graduated++;
+    } else {
+      updatedStudents.push({...s, class:nextClass});
+      newPromotions.push({id:genId(), studentId:s.id, fromSession:fromSession, fromClass:s.class, toClass:nextClass, status:"Promoted"});
+      summary.promoted++;
+    }
+  });
+
+  return {updatedStudents:updatedStudents, newPromotions:newPromotions, summary:summary};
+}
 
 // Merges a possibly-stale/partial settings.resultConfig with defaults so old
 // persisted settings rows (missing new fields) never crash a report card.
@@ -1893,6 +1967,12 @@ function StudentsModule({students,setStudents,settings}){
     Array.from({length:15},function(_,i){return{id:"row"+i,surname:"",firstname:"",middlename:"",gender:"Male",dob:"",parentName:"",parentPhone:"",bloodGroup:"O+",genotype:"AA",religion:"Islam",boardingType:"Day"};})
   );
   const [editingStudent,setEditingStudent]=useState(null);
+  // "+ Add from Archive" picker — brings an archived student back into the
+  // currently-filtered class, keeping every one of their existing records.
+  const [showAddFromArchive,setShowAddFromArchive]=useState(false);
+  const [archiveSearch,setArchiveSearch]=useState("");
+  const [selArchiveIds,setSelArchiveIds]=useState([]);
+  const [addArm,setAddArm]=useState("A");
 
   const filtered=students.filter(s=>
     (s.active!==false)&&(!fCls||s.class===fCls)&&(!fType||s.boardingType===fType)&&
@@ -1912,6 +1992,16 @@ function StudentsModule({students,setStudents,settings}){
   }
   function deactivate(id){if(window.confirm("Mark student as graduated/exited? They'll move to the Archive and drop off the active list."))setStudents(p=>p.map(s=>s.id===id?{...s,active:false}:s));}
   function reactivate(id){if(window.confirm("Reactivate this student back onto the active list?"))setStudents(p=>p.map(s=>s.id===id?{...s,active:true}:s));}
+
+  function toggleArchivePick(id){setSelArchiveIds(function(p){return p.includes(id)?p.filter(function(x){return x!==id;}):[...p,id];});}
+  function confirmAddFromArchive(){
+    if(!selArchiveIds.length) return;
+    setStudents(function(p){return p.map(function(s){
+      return selArchiveIds.includes(s.id) ? {...s, active:true, class:fCls, arm:addArm} : s;
+    });});
+    alert(selArchiveIds.length+" student(s) added into "+fCls+addArm+" from the Archive.");
+    setSelArchiveIds([]); setArchiveSearch(""); setShowAddFromArchive(false);
+  }
 
   function updateBulkRow(idx,field,value){
     setBulkRows(function(p){return p.map(function(r,i){return i===idx?{...r,[field]:value}:r;});});
@@ -1956,7 +2046,10 @@ function StudentsModule({students,setStudents,settings}){
         <select style={S.select} value={fCls} onChange={e=>setFCls(e.target.value)}><option value="">All Classes</option>{allClasses.map(c=><option key={c}>{c}</option>)}</select>
         <select style={S.select} value={fType} onChange={e=>setFType(e.target.value)}><option value="">All Types</option><option>Day</option><option>Boarder</option></select>
       </div>
-      <button style={S.btn()} onClick={openAdd}><span style={S.row}><Icon name="plus" size={13}/> Enrol Student</span></button>
+      <div style={S.row}>
+        {fCls&&<button style={S.btn("green")} onClick={function(){setAddArm("A");setArchiveSearch("");setSelArchiveIds([]);setShowAddFromArchive(true);}}><span style={S.row}><Icon name="plus" size={13}/> Add from Archive to {fCls}</span></button>}
+        <button style={S.btn()} onClick={openAdd}><span style={S.row}><Icon name="plus" size={13}/> Enrol Student</span></button>
+      </div>
     </div>
     <div style={{marginBottom:10}}>
       <TableActionBar
@@ -1993,6 +2086,44 @@ function StudentsModule({students,setStudents,settings}){
     </div>
 
     <StudentFormModal open={showForm} student={editingStudent} onSave={handleFormSave} onClose={()=>setShowForm(false)} classesOpts={allClasses}/>
+
+    <Modal open={showAddFromArchive} onClose={()=>setShowAddFromArchive(false)} title={"Add from Archive to "+fCls} wide>
+      {(function(){
+        var archiveList = students.filter(function(s){
+          return s.active===false && (!archiveSearch||`${s.surname} ${s.firstname} ${s.admissionNo}`.toLowerCase().includes(archiveSearch.toLowerCase()));
+        }).sort(function(a,b){
+          var aMatch = a.exitClass===fCls?0:1, bMatch = b.exitClass===fCls?0:1;
+          return aMatch-bMatch || (a.surname+a.firstname).localeCompare(b.surname+b.firstname);
+        });
+        return(<div>
+          <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>Every record (results, fees, attendance) stays attached to a student regardless of archive status — adding them back just reactivates the profile into <b>{fCls}</b> below, with the arm you pick.</div>
+          <div style={{...S.row,marginBottom:10,gap:10}}>
+            <input style={{...S.input,flex:1}} placeholder="Search archived students..." value={archiveSearch} onChange={e=>setArchiveSearch(e.target.value)}/>
+            <select style={S.select} value={addArm} onChange={e=>setAddArm(e.target.value)}>{["A","B","C","D","E"].map(function(a){return <option key={a}>{a}</option>;})}</select>
+          </div>
+          <div style={{maxHeight:320,overflowY:"auto",border:"1px solid "+C.border,borderRadius:8}}>
+            {archiveList.length===0&&<div style={{padding:20,textAlign:"center",color:C.textMuted,fontSize:12}}>No archived students match.</div>}
+            {archiveList.map(function(s){
+              var picked = selArchiveIds.includes(s.id);
+              return(
+                <div key={s.id} onClick={function(){toggleArchivePick(s.id);}} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:"1px solid "+C.border,cursor:"pointer",background:picked?"#F0FDF4":"#fff"}}>
+                  <input type="checkbox" checked={picked} onChange={function(){toggleArchivePick(s.id);}} onClick={function(e){e.stopPropagation();}}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:600}}>{s.surname} {s.firstname} {s.middlename||""}</div>
+                    <div style={{fontSize:10,color:C.textMuted}}>{s.admissionNo} · Last class: {s.exitClass||s.class||"—"} · {s.exitReason||"Exited"}{s.exitSession?" ("+s.exitSession+")":""}</div>
+                  </div>
+                  {s.exitClass===fCls&&<span style={S.badge("green")}>Matches {fCls}</span>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{...S.row,justifyContent:"flex-end",marginTop:14,gap:8}}>
+            <button style={S.btn("secondary")} onClick={()=>setShowAddFromArchive(false)}>Cancel</button>
+            <button style={S.btn("green")} disabled={!selArchiveIds.length} onClick={confirmAddFromArchive}>Add {selArchiveIds.length||""} to {fCls}{addArm}</button>
+          </div>
+        </div>);
+      })()}
+    </Modal>
 
     <Modal open={!!viewStu} onClose={()=>setViewStu(null)} title="Student Profile" wide>
       {viewStu&&<div>
@@ -4743,7 +4874,7 @@ function SMSTestWidget(){
   );
 }
 
-function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
+function SettingsModule({settings,setSettings,currentUser,setCurrentUser,students,setStudents,attendance,promotions,setPromotions}){
   // Wrap setSettings to backup critical data to localStorage on every save
   function setSettingsSafe(valOrFn){
     setSettings(function(prev){
@@ -4822,14 +4953,47 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
   const [sessTermForm,setSessTermForm]=useState({session:settings.currentSession||CURRENT_SESSION,term:settings.currentTerm||CURRENT_TERM});
   useEffect(function(){ setSessTermForm({session:settings.currentSession||CURRENT_SESSION,term:settings.currentTerm||CURRENT_TERM}); },[settings.currentSession,settings.currentTerm]);
   function saveSessionTerm(){
-    if(!window.confirm("Change current session/term to "+sessTermForm.session+" — "+sessTermForm.term+"? This affects every new record and every dashboard/report across the whole app.")) return;
+    var oldSession = settings.currentSession||CURRENT_SESSION;
+    var oldTerm = settings.currentTerm||CURRENT_TERM;
+    var sessionChanging = sessTermForm.session!==oldSession;
+
+    if(!sessionChanging){
+      if(!window.confirm("Change current term to "+sessTermForm.term+" (session stays "+sessTermForm.session+")? This affects every new record and every dashboard/report across the whole app.")) return;
+      setSettingsSafe(p=>({...p,currentSession:sessTermForm.session,currentTerm:sessTermForm.term}));
+      alert("Session/Term updated.");
+      return;
+    }
+
+    // Session is actually changing - a new session starting means the old
+    // one just ended, so run end-of-session promotion first and show
+    // exactly what it will do before touching any student record.
+    var result = computeSessionPromotion(students, attendance, settings, oldSession, oldTerm);
+    var s = result.summary;
+    var msg = "Starting "+sessTermForm.session+" ("+sessTermForm.term+") also runs end-of-session promotion for "+oldSession+", based on "+oldTerm+" attendance:\n\n"+
+      "• "+s.promoted+" student(s) promoted to their next class\n"+
+      "• "+s.graduated+" student(s) graduated to the Archive\n"+
+      "• "+s.archivedLowAttendance+" student(s) archived — under 20% attendance\n"+
+      (s.promotedNoData?"• "+s.promotedNoData+" student(s) had no attendance data for "+oldTerm+" and were promoted anyway — worth a manual check\n":"")+
+      (s.skippedUnknownClass?"• "+s.skippedUnknownClass+" student(s) are in a class not yet placed in Class Order (Settings > Classes & Subjects) and were left untouched\n":"")+
+      "\nArchived students keep every record (results, fees, attendance) and can be added back into any class from that class's \"+ Add from Archive\" button.\n\nProceed?";
+    if(!window.confirm(msg)) return;
+
+    setStudents(result.updatedStudents);
+    setPromotions(function(p){ return [...(p||[]),...result.newPromotions]; });
     setSettingsSafe(p=>({...p,currentSession:sessTermForm.session,currentTerm:sessTermForm.term}));
-    alert("Session/Term updated.");
+    alert("Session/Term updated. "+s.promoted+" promoted, "+s.graduated+" graduated, "+s.archivedLowAttendance+" archived for low attendance.");
   }
   function addCalEvent(){if(!calForm.title||!calForm.date)return alert("Title and date required.");setSettingsSafe(p=>({...p,calendarEvents:[...p.calendarEvents,{...calForm,id:genId()}]}));setCalForm({title:"",date:"",type:"Academic"});}
   function removeCalEvent(id){setSettingsSafe(p=>({...p,calendarEvents:p.calendarEvents.filter(e=>e.id!==id)}));}
   function addExtraClass(){if(!extraClass.trim())return;setSettingsSafe(p=>({...p,extraClasses:[...(p.extraClasses||[]),extraClass.trim()]}));setExtraClass("");}
   function addExtraSub(){if(!extraSub.trim())return;setSettingsSafe(p=>({...p,extraSubjects:[...(p.extraSubjects||[]),extraSub.trim()]}));setExtraSub("");}
+  function moveClassOrderItem(idx,dir){
+    var order = getClassOrder(settings).slice();
+    var newIdx = idx+dir;
+    if(newIdx<0||newIdx>=order.length) return;
+    var tmp = order[idx]; order[idx]=order[newIdx]; order[newIdx]=tmp;
+    setSettingsSafe(p=>({...p,classOrder:order}));
+  }
 
   return(<div>
     <div style={{...S.card,background:"linear-gradient(135deg,#160946,#230E6A)",marginBottom:14,...S.row,gap:14}}>
@@ -5249,6 +5413,31 @@ function SettingsModule({settings,setSettings,currentUser,setCurrentUser}){
           </div>
           {(settings.extraSubjects||[]).length>0&&<div style={{marginTop:10,display:"flex",flexWrap:"wrap",gap:6}}>{(settings.extraSubjects||[]).map(s=><div key={s} style={{...S.badge("green"),padding:"4px 10px",...S.row}}>{s}<button style={{background:"none",border:"none",cursor:"pointer",color:C.danger,marginLeft:4,fontSize:12}} onClick={()=>setSettingsSafe(p=>({...p,extraSubjects:p.extraSubjects.filter(x=>x!==s)}))}>×</button></div>)}</div>}
         </div>
+      </div>
+
+      <div style={{...S.card,marginTop:14}}>
+        <div style={S.cardTitle}>🪜 Class Progression Order</div>
+        <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
+          The order students move through classes when a new session starts (see Session &amp; Term above). Arrange every class here — including any custom ones — in the exact order a student passes through them; the last one in the list is treated as the graduating class. Defaults to {CLASSES.join(" → ")} with custom classes appended at the end until you rearrange them.
+        </div>
+        {isRoot ? (
+          <div>
+            {getClassOrder(settings).map(function(cls,idx){
+              var order = getClassOrder(settings);
+              return(
+                <div key={cls} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",background:idx%2?"#F9FAFB":"#fff",borderRadius:6}}>
+                  <span style={{fontSize:11,color:C.textMuted,width:18}}>{idx+1}.</span>
+                  <span style={{flex:1,fontSize:12,fontWeight:600}}>{cls}{idx===order.length-1?" (graduates)":""}</span>
+                  <button disabled={idx===0} style={{...S.btn("secondary",true),opacity:idx===0?0.4:1,padding:"2px 8px"}} onClick={function(){moveClassOrderItem(idx,-1);}}>↑</button>
+                  <button disabled={idx===order.length-1} style={{...S.btn("secondary",true),opacity:idx===order.length-1?0.4:1,padding:"2px 8px"}} onClick={function(){moveClassOrderItem(idx,1);}}>↓</button>
+                </div>
+              );
+            })}
+            {(settings.classOrder||[]).length>0&&<button style={{...S.btn("secondary"),marginTop:10,fontSize:11}} onClick={function(){if(window.confirm("Reset to the default order?"))setSettingsSafe(function(p){return {...p,classOrder:[]};});}}>Reset to Default Order</button>}
+          </div>
+        ) : (
+          <div style={{fontSize:12,color:C.textMuted}}>{getClassOrder(settings).join(" → ")}<br/>🔒 Only root admin can rearrange this.</div>
+        )}
       </div>
     </div>}
 
@@ -13193,7 +13382,7 @@ export default function App(){
         {page==="alumni"&&(userCanAccess(currentUser,"alumni")?<AlumniModule students={students} setStudents={setStudents} results={results} settings={settings}/>:<AccessDenied/>)}
         {page==="admissions"&&(userCanAccess(currentUser,"admissions")?<AdmissionsModule students={students} setStudents={setStudents} settings={settings} currentUser={currentUser} applications={applications} setApplications={setApplications}/>:<AccessDenied/>)}
         {page==="exams"&&(userCanAccess(currentUser,"exams")?<ExamModule students={students} staff={staff} results={results} setResults={setResults} settings={settings} currentUser={currentUser} exams={exams} setExams={setExams} examMarks={examMarks} setExamMarks={setExamMarks} cbtEnabled={cbtEnabled} setCbtEnabled={setCbtEnabled}/>:<AccessDenied/>)}
-        {page==="settings"&&(userCanAccess(currentUser,"settings")?<SettingsModule settings={settings} setSettings={setSettings} currentUser={currentUser} setCurrentUser={setCurrentUser}/>:<AccessDenied/>)}
+        {page==="settings"&&(userCanAccess(currentUser,"settings")?<SettingsModule settings={settings} setSettings={setSettings} currentUser={currentUser} setCurrentUser={setCurrentUser} students={students} setStudents={setStudents} attendance={attendance} promotions={promotions} setPromotions={setPromotions}/>:<AccessDenied/>)}
       </div>
     </main>
   </div>
