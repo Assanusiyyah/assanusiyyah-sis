@@ -120,7 +120,17 @@ function loadIfAllowed(table){
 async function sbLoad(table){
   const rows = await sbSelect(table);
   const isSingleton = SINGLETON_TABLES.indexOf(table) !== -1;
-  if(rows && rows.length>0){
+  if(rows===null){
+    // sbSelect only returns null on a failed/errored request (network blip,
+    // a deploy briefly swapping over, etc.) - NOT a confirmed-empty table.
+    // Treating this the same as "genuinely empty" used to reseed a brand
+    // new default row here, creating a second row that could then shadow
+    // the real (untouched) data on a later load. Just fall back to
+    // showing defaults for this one render instead; the next successful
+    // load picks the real data back up, and nothing gets written.
+    return isSingleton ? (table==="settings"?SEED_SETTINGS:{}) : [];
+  }
+  if(rows.length>0){
     return isSingleton ? rows[0] : rows;
   }
   const seed = getSeedMap()[table];
