@@ -1195,7 +1195,7 @@ const S = {
   statCard:(bg)=>({background:bg||C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 13px"}),
   statNum:{fontSize:22,fontWeight:800,color:C.primaryDark,lineHeight:1},
   statLabel:{fontSize:10,color:C.textMuted,marginTop:3,fontWeight:500},
-  btn:(v="primary",sm)=>({padding:sm?"5px 10px":"7px 13px",borderRadius:6,border:"none",cursor:"pointer",fontSize:sm?11:12,fontWeight:600,background:v==="primary"?C.primary:v==="danger"?C.danger:v==="gold"?C.gold:v==="success"?C.success:v==="ghost"?"transparent":v==="blue"?C.blue:"#F3F4F6",color:v==="ghost"?C.textMuted:v==="secondary"?C.text:C.white}),
+  btn:(v="primary",sm)=>({padding:sm?"5px 10px":"7px 13px",borderRadius:6,border:"none",cursor:"pointer",fontSize:sm?11:12,fontWeight:600,background:v==="primary"?C.primary:v==="danger"?C.danger:v==="gold"?C.gold:v==="success"||v==="green"?C.success:v==="ghost"?"transparent":v==="blue"?C.blue:"#F3F4F6",color:v==="ghost"?C.textMuted:v==="secondary"?C.text:C.white}),
   input:{width:"100%",padding:"7px 10px",border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,outline:"none",background:C.white,boxSizing:"border-box"},
   textarea:{width:"100%",padding:"7px 10px",border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,outline:"none",background:C.white,boxSizing:"border-box",resize:"vertical",minHeight:70},
   select:{padding:"7px 10px",border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,outline:"none",background:C.white,cursor:"pointer"},
