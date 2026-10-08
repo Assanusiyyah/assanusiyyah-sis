@@ -2450,6 +2450,8 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,chartOfAcc
   var _histFor = useState(null); var histFor = _histFor[0]; var setHistFor = _histFor[1];
   var _editFee = useState(null); var editFee = _editFee[0]; var setEditFee = _editFee[1];
   var _expEditing = useState(null); var expEditing = _expEditing[0]; var setExpEditing = _expEditing[1];
+  var _headForm = useState(null); var headForm = _headForm[0]; var setHeadForm = _headForm[1];
+  var _coaPeriod = useState("all"); var coaPeriod = _coaPeriod[0]; var setCoaPeriod = _coaPeriod[1];
 
   var FEE_TYPES = ["School Fees","Development Levy","PTA Levy","Exam Fee","Uniform","Books","Transport","Boarding Fee","Extra Lessons","Others"];
   var EXP_CATS = ["Maintenance","Salaries","Utilities","Office Supplies","Events","Transportation","Food/Catering","Security","Others"];
@@ -2595,12 +2597,104 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,chartOfAcc
   }
 
   var COA_TYPES = ["Asset","Liability","Equity","Income","Expense"];
+  var COA_DEFAULT_LABELS = {Asset:"Assets",Liability:"Liabilities",Equity:"Equity",Income:"Income",Expense:"Expenses"};
 
-  function openCoaAdd(){ setCoaEditing(null); setCoaForm({code:"",name:"",type:"Asset",description:""}); setShowCoaForm(true); }
-  function openCoaEdit(acc){ setCoaEditing(acc.id); setCoaForm({code:acc.code||"",name:acc.name||"",type:acc.type||"Asset",description:acc.description||""}); setShowCoaForm(true); }
+  // Headings (groups) are stored as rows in the same chart_of_accounts table,
+  // flagged isHeading:true. key = the value accounts store in their `type`
+  // field, label = what's displayed (renamable). Until the user edits any
+  // heading, the five standard ones below are used.
+  var coaAccounts = (chartOfAccounts||[]).filter(function(a){return !a.isHeading;});
+  var savedHeads = (chartOfAccounts||[]).filter(function(a){return a.isHeading;});
+  var defaultHeads = COA_TYPES.map(function(t,i){return {id:"HEAD-"+t,isHeading:true,key:t,label:COA_DEFAULT_LABELS[t],order:i};});
+  var coaHeads = (savedHeads.length ? savedHeads : defaultHeads).slice().sort(function(a,b){return (a.order||0)-(b.order||0);});
+  // Accounts whose type has no heading (e.g. one was removed) still get shown.
+  coaAccounts.forEach(function(a){
+    if(a.type && !coaHeads.some(function(h){return h.key===a.type;})) coaHeads.push({id:"HEAD-"+a.type,isHeading:true,key:a.type,label:a.type,order:coaHeads.length});
+  });
+  // ── Auto-filled account balances ──
+  // Each account can be linked to fee types (income collected), expenditure
+  // categories (money spent), or a computed figure (cash / receivable).
+  // Accounts never edited fall back to these defaults keyed by seeded code.
+  var DEFAULT_COA_LINKS = {
+    "1000":{auto:"cash"}, "1100":{auto:"receivable"},
+    "4000":{feeTypes:["School Fees"]}, "4010":{feeTypes:["Development Levy"]}, "4020":{feeTypes:["PTA Levy"]},
+    "4030":{otherIncome:true},
+    "5000":{expCats:["Salaries"]}, "5010":{expCats:["Utilities"]}, "5020":{expCats:["Maintenance"]},
+    "5030":{expCats:["Office Supplies"]}, "5040":{expCats:["Transportation"]}, "5050":{expCats:["Food/Catering"]},
+    "5060":{expCats:["Security"]}, "5990":{expCats:["Events","Others"],otherExpense:true}
+  };
+  function linksFor(a){ return a.links || DEFAULT_COA_LINKS[a.code] || {}; }
+  function inSessionRange(d, sess){ var y = parseInt(String(sess).split("/")[0])||0; return !!d && d>=y+"-09-01" && d<(y+1)+"-09-01"; }
+  var coaFees = fees.filter(function(f){return coaPeriod==="all"||f.session===fSess;});
+  var coaExp = expenditure.filter(function(e){return coaPeriod==="all"||inSessionRange(e.date,fSess);});
+  var incomeByType = {}, expByCat = {};
+  coaFees.forEach(function(f){ var t = f.feeType||"School Fees"; incomeByType[t] = (incomeByType[t]||0)+(f.amountPaid||0); });
+  coaExp.forEach(function(e){ var c = e.category||"Others"; expByCat[c] = (expByCat[c]||0)+(e.amount||0); });
+  var coaCollected = coaFees.reduce(function(a,f){return a+(f.amountPaid||0);},0);
+  var coaSpent = coaExp.reduce(function(a,e){return a+(e.amount||0);},0);
+  var coaOutstanding = coaFees.reduce(function(a,f){return a+Math.max(0,(f.amount||0)-(f.amountPaid||0));},0);
+  var linkedFee = {}, linkedExp = {}, hasOtherIncome = false, hasOtherExpense = false;
+  coaAccounts.forEach(function(a){ var l = linksFor(a);
+    (l.feeTypes||[]).forEach(function(t){linkedFee[t]=true;}); (l.expCats||[]).forEach(function(c){linkedExp[c]=true;});
+    if(l.otherIncome) hasOtherIncome = true; if(l.otherExpense) hasOtherExpense = true; });
+  function coaBalance(a){
+    var l = linksFor(a);
+    if(l.auto==="cash") return coaCollected-coaSpent;
+    if(l.auto==="receivable") return coaOutstanding;
+    var sum = 0;
+    (l.feeTypes||[]).forEach(function(t){sum += incomeByType[t]||0;});
+    (l.expCats||[]).forEach(function(c){sum += expByCat[c]||0;});
+    if(l.otherIncome) Object.keys(incomeByType).forEach(function(t){ if(!linkedFee[t]) sum += incomeByType[t]; });
+    if(l.otherExpense) Object.keys(expByCat).forEach(function(c){ if(!linkedExp[c]) sum += expByCat[c]; });
+    return sum;
+  }
+  function coaIsLinked(a){ var l = linksFor(a); return !!(l.auto||l.otherIncome||l.otherExpense||(l.feeTypes||[]).length||(l.expCats||[]).length); }
+  var unlinkedIncome = hasOtherIncome ? [] : Object.keys(incomeByType).filter(function(t){return !linkedFee[t]&&incomeByType[t];});
+  var unlinkedExp = hasOtherExpense ? [] : Object.keys(expByCat).filter(function(c){return !linkedExp[c]&&expByCat[c];});
+  function toggleLink(kind, val){
+    setCoaForm(function(p){ var l = {...(p.links||{})}; var arr = (l[kind]||[]).slice(); var i = arr.indexOf(val);
+      if(i>=0) arr.splice(i,1); else arr.push(val); l[kind] = arr; return {...p,links:l}; });
+  }
+  function setLinkFlag(k, v){ setCoaForm(function(p){ return {...p,links:{...(p.links||{}),[k]:v}}; }); }
+
+  function headLabel(key){ var h = coaHeads.find(function(x){return x.key===key;}); return h ? h.label : key; }
+  // Write the full current heading list (materialising the defaults the first time).
+  function saveHeads(heads){
+    var clean = heads.map(function(h,i){return {id:h.id,isHeading:true,key:h.key,label:h.label,order:i};});
+    setChartOfAccounts(function(p){return (p||[]).filter(function(a){return !a.isHeading;}).concat(clean);});
+  }
+  function openHeadAdd(){ setHeadForm({id:null,label:""}); }
+  function openHeadEdit(h){ setHeadForm({id:h.id,label:h.label}); }
+  function saveHead(){
+    var label = (headForm.label||"").trim();
+    if(!label) return alert("Enter a heading name.");
+    if(coaHeads.some(function(h){return h.label.toLowerCase()===label.toLowerCase()&&h.id!==headForm.id;})) return alert("A heading called \""+label+"\" already exists.");
+    if(headForm.id){
+      saveHeads(coaHeads.map(function(h){return h.id===headForm.id?{...h,label:label}:h;}));
+    } else {
+      var key = label.replace(/[^A-Za-z0-9]+/g," ").trim()||("Group "+(coaHeads.length+1));
+      if(coaHeads.some(function(h){return h.key===key;})) key = key+" "+genId().slice(0,4);
+      saveHeads(coaHeads.concat([{id:"HEAD-"+genId(),key:key,label:label}]));
+    }
+    setHeadForm(null);
+  }
+  function moveHead(i, dir){
+    var j = i+dir; if(j<0||j>=coaHeads.length) return;
+    var arr = coaHeads.slice(); var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    saveHeads(arr);
+  }
+  function deleteHead(h){
+    var n = coaAccounts.filter(function(a){return a.type===h.key;}).length;
+    if(n) return alert("\""+h.label+"\" still has "+n+" account(s). Move or delete them first (Edit an account to change its heading).");
+    if(!window.confirm("Delete the heading \""+h.label+"\"?")) return;
+    saveHeads(coaHeads.filter(function(x){return x.id!==h.id;}));
+  }
+
+  function openCoaAdd(type){ setCoaEditing(null); setCoaForm({code:"",name:"",type:type||(coaHeads[0]&&coaHeads[0].key)||"Asset",description:"",links:{feeTypes:[],expCats:[]}}); setShowCoaForm(true); }
+  function openCoaEdit(acc){ setCoaEditing(acc.id); var l = linksFor(acc); setCoaForm({code:acc.code||"",name:acc.name||"",type:acc.type||"Asset",description:acc.description||"",links:{...l,feeTypes:(l.feeTypes||[]).slice(),expCats:(l.expCats||[]).slice()}}); setShowCoaForm(true); }
   function saveCoa(){
     if(!coaForm.code.trim()||!coaForm.name.trim()) return alert("Account code and name are required.");
-    var dupe = (chartOfAccounts||[]).find(function(a){return a.code===coaForm.code.trim()&&a.id!==coaEditing;});
+    var dupe = coaAccounts.find(function(a){return a.code===coaForm.code.trim()&&a.id!==coaEditing;});
     if(dupe) return alert("An account with code \""+coaForm.code.trim()+"\" already exists.");
     if(coaEditing){
       setChartOfAccounts(function(p){return p.map(function(a){return a.id===coaEditing?{...a,...coaForm,code:coaForm.code.trim(),name:coaForm.name.trim()}:a;});});
@@ -3171,18 +3265,48 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
         <div>
           <div style={{...S.row,marginBottom:12,justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
             <div style={{position:"relative"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)"}}><Icon name="search" size={13} color={C.textMuted}/></span><input style={{...S.input,paddingLeft:27,width:220}} placeholder="Search code or name" value={coaSearch} onChange={function(e){setCoaSearch(e.target.value);}}/></div>
-            <button style={S.btn()} onClick={openCoaAdd}><span style={S.row}><Icon name="plus" size={13}/> Add Account</span></button>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <select style={S.select} value={coaPeriod} onChange={function(e){setCoaPeriod(e.target.value);}}>
+                <option value="all">Balances: All time</option>
+                <option value="session">Balances: {fSess} session</option>
+              </select>
+              {coaPeriod==="session" ? <select style={S.select} value={fSess} onChange={function(e){setFSess(e.target.value);}}>{SESSIONS.map(function(x){return <option key={x}>{x}</option>;})}</select> : null}
+              <button style={S.btn("secondary")} onClick={openHeadAdd}>+ Add Heading</button>
+              <button style={S.btn()} onClick={function(){openCoaAdd();}}><span style={S.row}><Icon name="plus" size={13}/> Add Account</span></button>
+            </div>
           </div>
-          {COA_TYPES.map(function(t){
-            var rows = (chartOfAccounts||[]).filter(function(a){
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:12}}>
+            {[{l:"Fees Collected",v:coaCollected,bg:"#F0FDF4"},{l:"Expenditure",v:coaSpent,bg:"#FEF2F2"},{l:"Cash Position",v:coaCollected-coaSpent,bg:"#EFF6FF"},{l:"Fees Outstanding",v:coaOutstanding,bg:"#FFFBEB"}].map(function(x,i){
+              return <div key={i} style={{...S.statCard(x.bg),padding:"10px 12px"}}><div style={S.statNum}>₦{x.v.toLocaleString()}</div><div style={S.statLabel}>{x.l}</div></div>;
+            })}
+          </div>
+          {unlinkedIncome.length||unlinkedExp.length ? (
+            <div style={{background:"#FEF3C7",border:"1px solid #F59E0B",borderRadius:6,padding:"8px 12px",marginBottom:12,fontSize:11}}>
+              <b>Not linked to any account yet:</b> {unlinkedIncome.map(function(t){return t+" (₦"+incomeByType[t].toLocaleString()+")";}).concat(unlinkedExp.map(function(c){return c+" expenditure (₦"+expByCat[c].toLocaleString()+")";})).join(", ")}. Edit an account and tick it under "Auto-fill from" so it's counted.
+            </div>
+          ) : null}
+          {coaHeads.map(function(h,hi){
+            var t = h.key;
+            var rows = coaAccounts.filter(function(a){
               return a.type===t && (!coaSearch || (a.code+" "+a.name).toLowerCase().includes(coaSearch.toLowerCase()));
             }).sort(function(a,b){return (a.code||"").localeCompare(b.code||"");});
-            if(!rows.length) return null;
+            if(!rows.length && coaSearch) return null;
+            var smBtn = {fontSize:10,padding:"3px 8px"};
             return (
-              <div key={t} style={{...S.card,marginBottom:14}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.primaryDark,marginBottom:8}}>{t}s</div>
+              <div key={h.id} style={{...S.card,marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6,marginBottom:8}}>
+                  <div style={{fontSize:13,fontWeight:700,color:C.primaryDark}}>{h.label} <span style={{fontSize:11,fontWeight:400,color:C.textMuted}}>({rows.length})</span> <span style={{fontSize:12,marginLeft:6}}>₦{rows.reduce(function(acc,a){return acc+coaBalance(a);},0).toLocaleString()}</span></div>
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                    <button style={{...S.btn("green"),...smBtn}} onClick={function(){openCoaAdd(t);}}>+ Add Account</button>
+                    <button style={{...S.btn("secondary"),...smBtn}} onClick={function(){openHeadEdit(h);}}>✏️ Rename</button>
+                    <button style={{...S.btn("secondary"),...smBtn}} disabled={hi===0} onClick={function(){moveHead(hi,-1);}} title="Move up">↑</button>
+                    <button style={{...S.btn("secondary"),...smBtn}} disabled={hi===coaHeads.length-1} onClick={function(){moveHead(hi,1);}} title="Move down">↓</button>
+                    <button style={{...S.btn("secondary"),...smBtn,color:C.danger}} onClick={function(){deleteHead(h);}} title="Delete heading">🗑</button>
+                  </div>
+                </div>
+                {rows.length===0 ? <div style={{fontSize:11,color:C.textMuted,padding:"8px 0"}}>No accounts under this heading yet.</div> : null}
                 <div style={{overflowX:"auto"}}>
-                <table style={S.table}><thead><tr>{["Code","Account Name","Description","Actions"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
+                {rows.length ? <table style={S.table}><thead><tr>{["Code","Account Name","Description","Balance (₦)","Actions"].map(function(x){return <th key={x} style={S.th}>{x}</th>;})}</tr></thead>
                 <tbody>
                   {rows.map(function(a){
                     return (
@@ -3190,31 +3314,66 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                         <td style={S.td}><span style={{fontFamily:"monospace",fontSize:11,fontWeight:700}}>{a.code}</span></td>
                         <td style={S.td}><b>{a.name}</b></td>
                         <td style={S.td}><span style={{fontSize:11,color:C.textMuted}}>{a.description||"—"}</span></td>
-                        <td style={S.td}><div style={S.row}>
-                          <button style={{...S.btn("ghost"),padding:3}} onClick={function(){openCoaEdit(a);}}><Icon name="edit" size={14} color={C.gold}/></button>
-                          <button style={{...S.btn("ghost"),padding:3}} onClick={function(){deleteCoa(a.id);}}><Icon name="trash" size={14} color={C.danger}/></button>
+                        <td style={{...S.tdC,fontWeight:700,whiteSpace:"nowrap"}}>{coaIsLinked(a) ? <span style={{color:coaBalance(a)<0?C.danger:C.text}}>₦{coaBalance(a).toLocaleString()}</span> : <span style={{color:C.textMuted,fontWeight:400,fontSize:11}}>not linked</span>}</td>
+                        <td style={S.td}><div style={{display:"flex",gap:4}}>
+                          <button style={{...S.btn("secondary"),...smBtn}} onClick={function(){openCoaEdit(a);}}>✏️ Edit</button>
+                          <button style={{...S.btn("secondary"),...smBtn,color:C.danger}} onClick={function(){deleteCoa(a.id);}}>🗑</button>
                         </div></td>
                       </tr>
                     );
                   })}
-                </tbody></table>
+                </tbody></table> : null}
                 </div>
               </div>
             );
           })}
-          {(!chartOfAccounts||!chartOfAccounts.length)&&<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:28}}>No accounts yet. Click "Add Account" to start building your chart of accounts.</div>}
+          {!coaAccounts.length&&<div style={{...S.card,textAlign:"center",color:C.textMuted,padding:28}}>No accounts yet. Click "Add Account" to start building your chart of accounts.</div>}
 
           <Modal open={showCoaForm} onClose={function(){setShowCoaForm(false);}} title={coaEditing?"Edit Account":"Add Account"}>
             <div style={S.grid2}>
               <div style={S.formGroup}><label style={S.label}>Account Code *</label><input style={S.input} value={coaForm.code} onChange={function(e){setCoaForm(function(p){return {...p,code:e.target.value};});}} placeholder="e.g. 5030"/></div>
-              <div style={S.formGroup}><label style={S.label}>Type *</label><select style={S.select} value={coaForm.type} onChange={function(e){setCoaForm(function(p){return {...p,type:e.target.value};});}}>{COA_TYPES.map(function(t){return <option key={t}>{t}</option>;})}</select></div>
+              <div style={S.formGroup}><label style={S.label}>Heading *</label><select style={{...S.select,width:"100%"}} value={coaForm.type} onChange={function(e){setCoaForm(function(p){return {...p,type:e.target.value};});}}>{coaHeads.map(function(h){return <option key={h.id} value={h.key}>{h.label}</option>;})}</select></div>
             </div>
             <div style={S.formGroup}><label style={S.label}>Account Name *</label><input style={S.input} value={coaForm.name} onChange={function(e){setCoaForm(function(p){return {...p,name:e.target.value};});}} placeholder="e.g. Office Supplies"/></div>
             <div style={S.formGroup}><label style={S.label}>Description</label><input style={S.input} value={coaForm.description} onChange={function(e){setCoaForm(function(p){return {...p,description:e.target.value};});}} placeholder="Optional notes"/></div>
+            <div style={{border:"1px solid "+C.border,borderRadius:6,padding:"8px 10px",marginBottom:8}}>
+              <div style={{fontSize:12,fontWeight:700,marginBottom:4}}>Auto-fill balance from</div>
+              <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>The balance updates automatically whenever a payment or expenditure is recorded.</div>
+              <div style={S.formGroup}><label style={S.label}>Computed figure</label>
+                <select style={{...S.select,width:"100%"}} value={(coaForm.links&&coaForm.links.auto)||""} onChange={function(e){setLinkFlag("auto",e.target.value);}}>
+                  <option value="">None — use the ticks below</option>
+                  <option value="cash">Cash position (fees collected − expenditure)</option>
+                  <option value="receivable">Fees outstanding (unpaid balances)</option>
+                </select>
+              </div>
+              <div style={{fontSize:11,fontWeight:600,margin:"4px 0"}}>Fee payments received for:</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"4px 12px",marginBottom:6}}>
+                {FEE_TYPES.map(function(t){return <label key={t} style={{fontSize:11,display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={((coaForm.links&&coaForm.links.feeTypes)||[]).indexOf(t)>=0} onChange={function(){toggleLink("feeTypes",t);}}/>{t}</label>;})}
+                <label style={{fontSize:11,display:"flex",alignItems:"center",gap:4,fontStyle:"italic"}}><input type="checkbox" checked={!!(coaForm.links&&coaForm.links.otherIncome)} onChange={function(e){setLinkFlag("otherIncome",e.target.checked);}}/>Any fee type not linked elsewhere</label>
+              </div>
+              <div style={{fontSize:11,fontWeight:600,margin:"4px 0"}}>Expenditure in category:</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"4px 12px"}}>
+                {EXP_CATS.map(function(c){return <label key={c} style={{fontSize:11,display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={((coaForm.links&&coaForm.links.expCats)||[]).indexOf(c)>=0} onChange={function(){toggleLink("expCats",c);}}/>{c}</label>;})}
+                <label style={{fontSize:11,display:"flex",alignItems:"center",gap:4,fontStyle:"italic"}}><input type="checkbox" checked={!!(coaForm.links&&coaForm.links.otherExpense)} onChange={function(e){setLinkFlag("otherExpense",e.target.checked);}}/>Any category not linked elsewhere</label>
+              </div>
+            </div>
             <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
               <button style={S.btn("secondary")} onClick={function(){setShowCoaForm(false);}}>Cancel</button>
               <button style={S.btn()} onClick={saveCoa}>{coaEditing?"Save Changes":"Add Account"}</button>
             </div>
+          </Modal>
+
+          <Modal open={!!headForm} onClose={function(){setHeadForm(null);}} title={headForm&&headForm.id?"Rename Heading":"Add Heading"}>
+            {headForm ? (
+              <div>
+                <div style={S.formGroup}><label style={S.label}>Heading Name *</label><input style={S.input} autoFocus value={headForm.label} onChange={function(e){var v=e.target.value; setHeadForm(function(p){return {...p,label:v};});}} placeholder="e.g. Current Assets"/></div>
+                {headForm.id ? <div style={{fontSize:11,color:C.textMuted}}>Accounts under this heading stay attached to it after renaming.</div> : null}
+                <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+                  <button style={S.btn("secondary")} onClick={function(){setHeadForm(null);}}>Cancel</button>
+                  <button style={S.btn()} onClick={saveHead}>{headForm.id?"Save":"Add Heading"}</button>
+                </div>
+              </div>
+            ) : null}
           </Modal>
         </div>
       ) : null}
