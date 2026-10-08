@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScholaByte</title>
+<style>
+  html,body{margin:0;height:100%;background:#0F1E3D;color:#E8EEFF;font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+  .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;box-sizing:border-box;text-align:center}
+  .brand{font-weight:800;font-size:22px;letter-spacing:.3px}.brand b{color:#14B8A6}
+  .bar{width:min(320px,80vw);height:8px;border-radius:6px;background:rgba(255,255,255,.12);overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#1F4FD8,#14B8A6);transition:width .25s}
+  .msg{font-size:13px;opacity:.8;max-width:420px}
+  .err{color:#FCA5A5}
+  button{margin-top:6px;padding:8px 16px;border-radius:8px;border:0;background:#1F4FD8;color:#fff;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">Schola<b>Byte</b></div>
+  <div class="bar"><i id="p"></i></div>
+  <div class="msg" id="m">Loading…</div>
+</div>
+<script>
+// Loader for ScholaByte inside the Assanusiyyah SIS. Runs in an iframe opened by the SIS page,
+// which provides window.parent.__sbSis = { keys(), ready(), save(), close(), who }.
+// Fetches the encrypted app shell + only the class chunks this user has keys for, decrypts
+// (AES-GCM, 12-byte IV first) and gunzips them, splices the data in and swaps the app in.
+(function(){
+  var P = document.getElementById('p'), M = document.getElementById('m');
+  function show(t, pct){ M.textContent = t; if (pct != null) P.style.width = pct + '%'; }
+  function fail(t){
+    M.innerHTML = ''; var s = document.createElement('div'); s.className = 'err'; s.textContent = t; M.appendChild(s);
+    var b = document.createElement('button'); b.textContent = 'Back to School Portal';
+    b.onclick = function(){ try { parent.__sbSis.close(); } catch (e) {} };
+    M.appendChild(b);
+  }
+  var sis; try { sis = window.parent !== window && window.parent.__sbSis; } catch (e) {}
+  if (!sis) return fail('Please open ScholaByte from the school portal.');
+  if (!window.crypto || !crypto.subtle || typeof DecompressionStream === 'undefined')
+    return fail('This browser is too old for ScholaByte. Please update Chrome (or use a newer phone browser).');
+
+  var APP = /^#practice/.test(location.hash) ? 'practice' : 'learn';
+  var pre = APP === 'learn' ? 'tb' : 'cbt';
+  var b64 = function(s){ var b = atob(s), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+  function open(buf, keyB64){
+    return crypto.subtle.importKey('raw', b64(keyB64), 'AES-GCM', false, ['decrypt'])
+      .then(function(k){ var u = new Uint8Array(buf); return crypto.subtle.decrypt({ name: 'AES-GCM', iv: u.slice(0, 12) }, k, u.slice(12)); })
+      .then(function(gz){ return new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream('gzip'))).text(); });
+  }
+  var done = 0, total = 1;
+  function get(name, v){
+    return fetch('/scholabyte/' + name + '?v=' + v).then(function(r){
+      if (!r.ok) throw new Error('missing ' + name + ' (' + r.status + ')');
+      return r.arrayBuffer();
+    }).then(function(b){ done++; show('Downloading… ' + done + ' of ' + total, Math.round(done / total * 80)); return b; });
+  }
+
+  show('Signing in…', 3);
+  Promise.all([sis.keys(), sis.ready(), fetch('/scholabyte/manifest.json', { cache: 'no-cache' }).then(function(r){ if (!r.ok) throw new Error('ScholaByte files are not on this server yet.'); return r.json(); })])
+  .then(function(a){
+    var k = a[0], man = a[2];
+    var classes = (k.classes || []).filter(function(c){ return k.keys[c] && man.classes.indexOf(c) >= 0; });
+    if (!classes.length) throw new Error('ScholaByte content is available for JSS1 to SS3 students. Your class (' + ((k.who && k.who.class) || 'not set') + ') has no ScholaByte content yet — please ask the school.');
+    total = classes.length + 1;
+    show('Downloading…', 5);
+    return Promise.all([get(pre + '-shell.bin', man.build)].concat(classes.map(function(c){ return get(pre + '-' + c + '.bin', man.build); })))
+      .then(function(bufs){
+        show('Opening…', 85);
+        return Promise.all([open(bufs[0], k.keys.shell)].concat(classes.map(function(c, i){ return open(bufs[i + 1], k.keys[c]); })));
+      })
+      .then(function(parts){
+        var html = parts[0];
+        var data = 'Object.assign({},' + parts.slice(1).join(',') + ')';
+        if (html.indexOf('/*SB_DATA*/{}') < 0) throw new Error('ScholaByte files are damaged (no data slot). Please tell the school admin.');
+        html = html.replace('/*SB_DATA*/{}', function(){ return data; });
+        html = html.replace(/\/\*SB_CLASSES\*\/\[[^\]]*\]/, function(){ return JSON.stringify(classes); });
+        show('Opening…', 100);
+        document.open(); document.write(html); document.close();
+      });
+  })
+  .catch(function(e){ fail(e && e.message ? e.message : 'Could not open ScholaByte.'); });
+})();
+</script>
+</body>
+</html>

@@ -1151,6 +1151,8 @@ const ALL_PAGES = [
 function userCanAccess(user, pageId){
   if(!user)return false;
   if(user.role==="root")return true;
+  if(pageId==="scholabyte")return true; // ScholaByte is open to every staff/admin login
+
   const perms=user.permissions||[];
   if(perms.includes("all"))return true;
   return perms.includes(pageId);
@@ -1168,6 +1170,7 @@ const NAV = [
   {id:"lessons",label:"Lesson Notes",icon:"subject",section:"LMS"},
   {id:"studentportal",label:"Student Portal",icon:"welfare",section:"LMS"},
   {id:"elibrary",label:"E-Library",icon:"elibrary",section:"LMS"},
+  {id:"scholabyte",label:"ScholaByte",icon:"subject",section:"LMS"},
   {id:"fees",label:"Fees & Finance",icon:"fees",section:"FINANCE"},
   {id:"clinic",label:"Clinic",icon:"clinic",section:"ACADEMICS"},
   {id:"exams",label:"Exams",icon:"exams",section:"ACADEMICS"},
@@ -1189,7 +1192,7 @@ const NAV = [
 
 const PAGE_TITLES = {
   dashboard:"Dashboard",analytics:"Student Analytics",elibrary:"E-Library",clinic:"School Clinic",counsellor:"School Counsellor",exams:"Exams & Assessment",payroll:"Payroll & Staff Finance",calendar:"Academic Period Planner",alumni:"Alumni Records",admissions:"Admissions Portal",students:"Student Records",attendance:"Attendance",results:"Results",
-  lessons:"Lesson Notes",studentportal:"Student Portal",
+  lessons:"Lesson Notes",studentportal:"Student Portal",scholabyte:"ScholaByte — Textbook & CBT Practice",
   fees:"Fees & Finance",staff:"Staff Records",timetable:"School Timetable",idcards:"ID Cards",diary:"School Diary",
   messages:"Messages",welfare:"Welfare & Conduct",settings:"Settings & Administration",gallery:"School Gallery",
   hostel:"Hostel & Kitchen Management",
@@ -1201,6 +1204,7 @@ const MODULE_COLORS = {
   attendance:{bg:"#F0FDF4",accent:"#166534",emoji:"📋"},
   results:{bg:"#F5F3FF",accent:"#6D28D9",emoji:"📊"},
   fees:{bg:"#FFFBEB",accent:"#6B491B",emoji:"💰"},
+  scholabyte:{bg:"#EEF2FF",accent:"#1F4FD8",emoji:"📘"},
   staff:{bg:"#FFF7ED",accent:"#EA580C",emoji:"👩‍🏫"},
   timetable:{bg:"#ECFDF5",accent:"#0D9488",emoji:"🗓️"},
   messages:{bg:"#EFF6FF",accent:"#2563EB",emoji:"💬"},
@@ -9239,6 +9243,217 @@ function HostelModule({students, staff, settings, currentUser,
 }
 
 
+// ══════════════════════════════════════════════════════
+// SCHOLABYTE (Textbook + CBT Portal) inside the SIS
+// ══════════════════════════════════════════════════════
+// Content is published as encrypted per-class files under /scholabyte/ and
+// opened by /scholabyte-app.html in a full-screen iframe. /api/scholabyte hands
+// out only the class keys this login may use (student: own class and below;
+// staff/admin: all). window.__sbSis is the bridge the iframe calls back into.
+// Each user's ScholaByte progress (the apps' cbt_*/abk-* localStorage keys) is
+// saved to the server, and swapped in on open — so it follows the student
+// across devices and doesn't mix on a shared computer.
+var SB_STORE_KEY = function(k){ return /^(cbt_|abk-)/.test(k); };
+var SB_SKIP_SAVE = function(k){ return /^cbt_question-bank/.test(k); }; // big, teacher-edited bank copies stay local
+function sbApi(token, body){
+  return fetch("/api/scholabyte",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify(body)})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ if(!r.ok) throw new Error(j.error||("Error "+r.status)); return j; }); });
+}
+function sbLocalKeys(){ var out=[]; try{ for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(SB_STORE_KEY(k)) out.push(k); } }catch(e){} return out; }
+function installScholaByte(token, onClose){
+  var keysP=null, readyP=null, lastSig=null, saving=false;
+  var sis = {
+    who:null,
+    keys:function(){
+      if(!keysP) keysP = sbApi(token,{action:"keys"}).then(function(j){ sis.who=j.who; return j; });
+      return keysP;
+    },
+    ready:function(){
+      if(!readyP) readyP = sis.keys().then(function(k){
+        var owner = k.who.owner;
+        function restore(state, at){
+          sbLocalKeys().forEach(function(key){ localStorage.removeItem(key); });
+          Object.keys(state||{}).forEach(function(key){ if(SB_STORE_KEY(key)) localStorage.setItem(key, state[key]); });
+          localStorage.setItem("sb-sis-owner", owner); localStorage.setItem("sb-sis-savedAt", String(at||0));
+        }
+        return sbApi(token,{action:"load"}).then(function(srv){
+          var localAt = parseInt(localStorage.getItem("sb-sis-savedAt"))||0;
+          if(localStorage.getItem("sb-sis-owner")!==owner || (srv.savedAt||0)>localAt) restore(srv.state, srv.savedAt);
+        }, function(){
+          // progress service unavailable: still never show another user's progress
+          if(localStorage.getItem("sb-sis-owner")!==owner) restore({},0);
+        });
+      });
+      return readyP;
+    },
+    save:function(){
+      try{
+        if(!sis.who || saving || localStorage.getItem("sb-sis-owner")!==sis.who.owner) return;
+        var state={};
+        sbLocalKeys().forEach(function(k){ if(!SB_SKIP_SAVE(k)) state[k]=localStorage.getItem(k); });
+        var sig=JSON.stringify(state);
+        if(sig===lastSig) return;
+        saving=true;
+        sbApi(token,{action:"save",state:state}).then(function(j){
+          saving=false; lastSig=sig; localStorage.setItem("sb-sis-savedAt", String(j.savedAt||Date.now()));
+        }, function(){ saving=false; });
+      }catch(e){ saving=false; }
+    },
+    close:function(){ sis.save(); onClose(); }
+  };
+  window.__sbSis = sis;
+  return sis;
+}
+
+function ScholaByteOverlay({app, token, onClose}){
+  var ref = useRef(null);
+  useEffect(function(){
+    installScholaByte(token, onClose);
+    var prevOverflow = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return function(){ try{ window.__sbSis && window.__sbSis.save(); }catch(e){} document.body.style.overflow = prevOverflow; };
+  }, [token]);
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"#0F1E3D"}}>
+      <iframe ref={ref} title="ScholaByte" src={"/scholabyte-app#"+(app==="practice"?"practice":"learn")} style={{border:0,width:"100%",height:"100%",display:"block"}} allow="fullscreen; clipboard-write"/>
+    </div>
+  );
+}
+
+function ScholaByteLauncher({token, isStudent}){
+  var _open = useState(null); var openApp = _open[0]; var setOpenApp = _open[1];
+  var _info = useState(null); var info = _info[0]; var setInfo = _info[1];
+  var _err = useState(""); var err = _err[0]; var setErr = _err[1];
+  useEffect(function(){
+    if(!token) return;
+    sbApi(token,{action:"keys"}).then(function(j){ setInfo(j); }, function(e){ setErr(e.message); });
+  }, [token]);
+  var classes = info ? info.classes : [];
+  var range = classes.length ? (classes.length===1 ? classes[0] : classes[0]+" – "+classes[classes.length-1]) : "";
+  var card = function(app, emoji, title, text, bg){
+    return (
+      <button onClick={function(){ setOpenApp(app); }} disabled={!info||!classes.length} style={{flex:"1 1 240px",textAlign:"left",border:"none",borderRadius:14,padding:"18px 20px",cursor:info&&classes.length?"pointer":"not-allowed",background:bg,color:"#fff",boxShadow:"0 4px 14px rgba(15,30,61,.18)",opacity:info&&classes.length?1:.6}}>
+        <div style={{fontSize:30,marginBottom:6}}>{emoji}</div>
+        <div style={{fontSize:17,fontWeight:800}}>{title}</div>
+        <div style={{fontSize:12,opacity:.9,marginTop:4}}>{text}</div>
+      </button>
+    );
+  };
+  return (
+    <div>
+      <div style={{...S.card,marginBottom:14,background:"linear-gradient(120deg,#0F1E3D,#1F4FD8)",color:"#fff"}}>
+        <div style={{fontSize:20,fontWeight:900}}>Schola<span style={{color:"#5EEAD4"}}>Byte</span></div>
+        <div style={{fontSize:12,opacity:.85}}>Learn. Practice. Pass. — full textbook lessons and CBT practice for every subject.</div>
+        <div style={{marginTop:10,fontSize:12}}>
+          {err ? <span style={{color:"#FCA5A5"}}>⚠ {err}</span> :
+           !info ? "Checking your access…" :
+           classes.length ? <span>Your access: <b>{range}</b>{isStudent?"":" (all classes)"}</span> :
+           <span style={{color:"#FDE68A"}}>ScholaByte content covers JSS1 to SS3. Your class ({(info.who&&info.who.class)||"not set"}) isn't included yet — please ask the school.</span>}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:14}}>
+        {card("learn","📘","Textbook","Read full lessons with worked examples, diagrams and quick quizzes.","linear-gradient(135deg,#1F4FD8,#3B6FF0)")}
+        {card("practice","📝","CBT Practice","Practise tests and timed exams by subject, term and topic.","linear-gradient(135deg,#0F8C7F,#14B8A6)")}
+      </div>
+      <div style={{fontSize:11,color:C.textMuted}}>{isStudent ? "Your progress and scores are saved to your school account, so they follow you on any device." : "Progress you make here is saved to your own account. Students' progress is in the Progress tab."}</div>
+      {openApp ? <ScholaByteOverlay app={openApp} token={token} onClose={function(){ setOpenApp(null); }}/> : null}
+    </div>
+  );
+}
+
+function ScholaByteProgress({token}){
+  var _rows = useState(null); var rows = _rows[0]; var setRows = _rows[1];
+  var _err = useState(""); var err = _err[0]; var setErr = _err[1];
+  var _cls = useState(""); var cls = _cls[0]; var setCls = _cls[1];
+  var _open = useState(null); var openRow = _open[0]; var setOpenRow = _open[1];
+  function load(){ setErr(""); sbApi(token,{action:"report"}).then(function(j){ setRows(j.rows||[]); }, function(e){ setErr(e.message); setRows([]); }); }
+  useEffect(load, [token]);
+  var list = (rows||[]).filter(function(r){ return !cls || r.class===cls; })
+    .sort(function(a,b){ return ((a.class||"")+(a.name||"")).localeCompare((b.class||"")+(b.name||"")); });
+  var classesSeen = Array.from(new Set((rows||[]).map(function(r){return r.class;}).filter(Boolean))).sort();
+  var fmtAgo = function(t){ if(!t) return "—"; var d = Math.floor((Date.now()-t)/86400000); return d<=0?"Today":d===1?"Yesterday":d+" days ago"; };
+  return (
+    <div>
+      <div style={{...S.card,marginBottom:12,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <select style={S.select} value={cls} onChange={function(e){setCls(e.target.value);}}>
+          <option value="">All classes</option>
+          {classesSeen.map(function(c){return <option key={c}>{c}</option>;})}
+        </select>
+        <button style={S.btn("secondary")} onClick={load}>↻ Refresh</button>
+        <span style={{fontSize:11,color:C.textMuted}}>Practice scores from ScholaByte — separate from report-card results. Students appear once they've opened ScholaByte.</span>
+      </div>
+      {err ? <div style={{...S.card,color:C.danger,marginBottom:12}}>⚠ {err}</div> : null}
+      <div style={S.card}>
+        <div style={{overflowX:"auto"}}>
+          <table style={S.table}>
+            <thead><tr>{["Student","Class","Tests taken","Average","Topics read","Last active",""].map(function(h,i){return <th key={i} style={S.th}>{h}</th>;})}</tr></thead>
+            <tbody>
+              {rows===null ? <tr><td colSpan={7} style={{...S.tdC,padding:24,color:C.textMuted}}>Loading…</td></tr> :
+               list.length===0 ? <tr><td colSpan={7} style={{...S.tdC,padding:24,color:C.textMuted}}>No ScholaByte activity yet{cls?" for "+cls:""}.</td></tr> :
+               list.map(function(r){
+                var s = r.summary||{};
+                var avg = s.avgPct;
+                return (
+                  <tr key={r.id}>
+                    <td style={{...S.td,fontWeight:600}}>{r.name||"—"}<div style={{fontSize:10,color:C.textMuted}}>{r.admissionNo||""}</div></td>
+                    <td style={S.tdC}>{(r.class||"")+(r.arm||"")}</td>
+                    <td style={S.tdC}>{s.tests||0}</td>
+                    <td style={{...S.tdC,fontWeight:700,color:avg==null?C.textMuted:avg>=70?C.success:avg>=50?C.warning:C.danger}}>{avg==null?"—":avg+"%"}</td>
+                    <td style={S.tdC}>{s.topicsRead||0}</td>
+                    <td style={S.td}>{fmtAgo(r.savedAt)}</td>
+                    <td style={S.td}><button style={{...S.btn("secondary"),fontSize:10,padding:"2px 8px"}} onClick={function(){setOpenRow(r);}}>Details</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {openRow ? (
+        <Modal open={true} onClose={function(){setOpenRow(null);}} title={"ScholaByte — "+(openRow.name||"")}>
+          {(function(){
+            var s = openRow.summary||{};
+            return (
+              <div>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:6}}>Topics to revise (below 60%)</div>
+                {(s.weak||[]).length ? (s.weak||[]).map(function(t,i){
+                  return <div key={i} style={{fontSize:11,padding:"3px 0",borderBottom:"1px solid "+C.border}}>{t.topic.split("||").join(" · ")} — <b style={{color:C.danger}}>{Math.round(t.ok/t.n*100)}%</b> ({t.ok}/{t.n})</div>;
+                }) : <div style={{fontSize:11,color:C.textMuted}}>None yet.</div>}
+                <div style={{fontSize:12,fontWeight:700,margin:"12px 0 6px"}}>Recent tests</div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={S.table}>
+                    <thead><tr>{["Date","Subject","Mode","Score"].map(function(h){return <th key={h} style={S.th}>{h}</th>;})}</tr></thead>
+                    <tbody>
+                      {(s.recent||[]).slice().reverse().map(function(t,i){
+                        return <tr key={i}><td style={S.td}>{t.at?formatDate(new Date(t.at).toISOString()):"—"}</td><td style={S.td}>{t.cls} {t.subject}</td><td style={S.td}>{t.mode||"—"}</td><td style={S.tdC}>{t.score}/{t.total} ({Math.round(t.score/t.total*100)}%)</td></tr>;
+                      })}
+                      {!(s.recent||[]).length ? <tr><td colSpan={4} style={{...S.tdC,color:C.textMuted}}>No tests yet.</td></tr> : null}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      ) : null}
+    </div>
+  );
+}
+
+function ScholaByteModule({currentUser}){
+  var _tab = useState("open"); var tab = _tab[0]; var setTab = _tab[1];
+  var token = getAuthToken();
+  return (
+    <div>
+      <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:"2px solid "+C.border}}>
+        {[["open","📘 Open ScholaByte"],["progress","📊 Student Progress"]].map(function(p){
+          return <button key={p[0]} onClick={function(){setTab(p[0]);}} style={{...S.btn(tab===p[0]?"primary":"secondary"),borderRadius:"6px 6px 0 0",marginBottom:-2,fontSize:11,padding:"6px 14px"}}>{p[1]}</button>;
+        })}
+      </div>
+      {tab==="open" ? <ScholaByteLauncher token={token} isStudent={false}/> : <ScholaByteProgress token={token}/>}
+    </div>
+  );
+}
+
 function ParentPortal({student, students, results, resultStats, attendance, fees, settings, diary, elibrary, lessons, assignments, submissions, exams, gallery, parentToken, onRefresh, onLogout}){
   var _tab = useState("home"); var tab = _tab[0]; var setTab = _tab[1];
   var _selSess = useState(getCurrentSession()); var selSess = _selSess[0]; var setSelSess = _selSess[1];
@@ -9368,7 +9583,7 @@ function ParentPortal({student, students, results, resultStats, attendance, fees
     ["home","🏠 Home"],["results","📝 Results"],
     ["attendance","📋 Attendance"],["fees","💰 Fees"],
     ["lessons","📖 Lesson Notes"],["assignments","📝 Assignments"],
-    ["cbt","🖥 CBT Exams"],
+    ["cbt","🖥 CBT Exams"],["scholabyte","📘 ScholaByte"],
     ["notices","📢 Notices"],["library","📚 Library"],["gallery","🖼 Gallery"],
   ];
 
@@ -10084,6 +10299,7 @@ function ParentPortal({student, students, results, resultStats, attendance, fees
         {tab==="results" ? renderResults() : null}
         {tab==="attendance" ? renderAttendance() : null}
         {tab==="fees" ? renderFees() : null}
+        {tab==="scholabyte" ? <ScholaByteLauncher token={parentToken} isStudent={true}/> : null}
         {tab==="lessons" ? renderLessons() : null}
         {tab==="assignments" ? renderAssignments() : null}
         {tab==="cbt" ? renderCbt() : null}
@@ -13873,6 +14089,7 @@ export default function App(){
         {page==="idcards"&&(userCanAccess(currentUser,"idcards")?<IDCardsModule students={students} staff={staff} settings={settings} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="diary"&&(userCanAccess(currentUser,"diary")?<DiaryModule students={students} staff={staff} diary={diary} setDiary={setDiary} currentUser={currentUser}/>:<AccessDenied/>)}
         {page==="gallery"&&(userCanAccess(currentUser,"gallery")?<GalleryModule gallery={gallery} setGallery={setGallery} currentUser={currentUser} readOnly={currentUser.role==="staff"}/>:<AccessDenied/>)}
+        {page==="scholabyte"&&<ScholaByteModule currentUser={currentUser}/>}
         {page==="elibrary"&&(userCanAccess(currentUser,"elibrary")?<ELibraryModule elibrary={elibrary} setElibrary={setElibrary} currentUser={currentUser} students={students} staff={staff}/>:<AccessDenied/>)}
         {page==="clinic"&&(userCanAccess(currentUser,"clinic")?<ClinicModule students={students} staff={staff} clinic={clinic} setClinic={setClinic} currentUser={currentUser} settings={settings}/>:<AccessDenied/>)}
         {page==="hostel"&&(userCanAccess(currentUser,"hostel")?<HostelModule students={students} staff={staff} settings={settings} currentUser={currentUser}
