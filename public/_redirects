@@ -8,4 +8,7 @@
 /api/exam               /.netlify/functions/exam-attempt        200
 /api/parent-assignment  /.netlify/functions/parent-assignment   200
 /api/candidate          /.netlify/functions/candidate-portal    200
+/api/staff-login        /.netlify/functions/staff-login         200
+/api/staff-data         /.netlify/functions/staff-data          200
+/api/scholabyte         /.netlify/functions/scholabyte          200
 /*                       /index.html                             200

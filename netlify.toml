@@ -53,6 +53,21 @@
   status = 200
 
 [[redirects]]
+  from = "/api/staff-login"
+  to = "/.netlify/functions/staff-login"
+  status = 200
+
+[[redirects]]
+  from = "/api/staff-data"
+  to = "/.netlify/functions/staff-data"
+  status = 200
+
+[[redirects]]
+  from = "/api/scholabyte"
+  to = "/.netlify/functions/scholabyte"
+  status = 200
+
+[[redirects]]
   from = "/api/candidate"
   to = "/.netlify/functions/candidate-portal"
   status = 200

@@ -12,5 +12,3 @@ build/
 # Cache
 .cache/
 
-# ScholaByte encrypted content (built by the textbook repo: node _build/sis-pack.mjs)
-public/scholabyte/
