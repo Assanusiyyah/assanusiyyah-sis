@@ -2435,7 +2435,8 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,chartOfAcc
   var _showForm = useState(false); var showForm = _showForm[0]; var setShowForm = _showForm[1];
   var _showExp = useState(false); var showExp = _showExp[0]; var setShowExp = _showExp[1];
   var _showReceipt = useState(null); var showReceipt = _showReceipt[0]; var setShowReceipt = _showReceipt[1];
-  var _form = useState({studentId:"",class:"",session:getCurrentSession(),term:getCurrentTerm(),feeType:"School Fees",amount:15000,amountPaid:0,datePaid:today(),status:"Unpaid",receipt:""});
+  var _form = useState({studentId:"",class:"",session:getCurrentSession(),term:getCurrentTerm(),feeType:"School Fees",amount:15000,amountPaid:0,datePaid:today(),status:"Unpaid",receipt:"",payFor:"current",amountTouched:false});
+  var _fKind = useState(""); var fKind = _fKind[0]; var setFKind = _fKind[1];
   var form = _form[0]; var setForm = _form[1];
   var _expForm = useState({date:today(),amount:"",category:"Maintenance",reason:"",recordedBy:(currentUser&&currentUser.name)||"Admin"});
   var expForm = _expForm[0]; var setExpForm = _expForm[1];
@@ -2466,6 +2467,11 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,chartOfAcc
     var matchTerm = f.term===fTerm;
     var matchCls = !fCls || (stu&&stu.class===fCls);
     var matchStu = !fStu || f.studentId===fStu;
+    if(fKind){
+      // "Advance/Arrears received in fSess fTerm" - matched on when the money came in, not the term it pays for
+      var got = getPayments(f).some(function(p){return p.kind===fKind && p.paidInSession===fSess && p.paidInTerm===fTerm;});
+      return got && matchCls && matchStu;
+    }
     return matchSess && matchTerm && matchCls && matchStu;
   });
 
@@ -2511,24 +2517,75 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,chartOfAcc
     setPayForm({amount:bal>0?String(bal):"",date:today(),time:nowTime()});
     setPayFor(f.id);
   }
-  function saveAddPayment(){
-    var f = fees.find(function(x){return x.id===payFor;});
-    if(!f) return setPayFor(null);
-    var amt = parseInt(payForm.amount)||0;
-    if(amt<=0) return alert("Enter the amount paid.");
-    if(!payForm.date) return alert("Enter the payment date.");
+  // ── Advance / arrears ──
+  // Terms are ordered session-by-session; a payment is "arrears" when it's for
+  // a term before the current one, "advance" when for a term after it.
+  function termIdx(sess, term){ return SESSIONS.indexOf(sess)*3 + TERMS.indexOf(term); }
+  var curIdx = termIdx(getCurrentSession(), getCurrentTerm());
+  function kindFor(sess, term){ var i = termIdx(sess, term); return i<curIdx?"arrears":i>curIdx?"advance":"current"; }
+  var ALL_PERIODS = [];
+  SESSIONS.forEach(function(se){ TERMS.forEach(function(te){ ALL_PERIODS.push({session:se,term:te,idx:termIdx(se,te)}); }); });
+  function recordKind(f){
+    if(f.paymentFor==="advance"||f.paymentFor==="arrears") return f.paymentFor;
+    return getPayments(f).some(function(p){return p.kind==="arrears";}) ? "arrears" : "";
+  }
+  function stuClass(f){ if(f.class) return f.class; var st = students.find(function(x){return x.id===f.studentId;}); return st?st.class:""; }
+  // Billed amount suggestion: what this fee type was last billed for the same
+  // class (same term first, otherwise the most recent term).
+  function suggestBill(n){
+    if(!n.class||!n.feeType) return null;
+    var same = fees.filter(function(f){return f.feeType===n.feeType && (f.amount||0)>0 && stuClass(f)===n.class;});
+    if(!same.length) same = fees.filter(function(f){return f.studentId===n.studentId && f.feeType===n.feeType && (f.amount||0)>0;});
+    if(!same.length) return null;
+    var exact = same.find(function(f){return f.session===n.session&&f.term===n.term;});
+    if(exact) return exact.amount;
+    return same.slice().sort(function(a,b){return termIdx(b.session,b.term)-termIdx(a.session,a.term);})[0].amount;
+  }
+  function findExisting(n){
+    if(!n.studentId) return null;
+    return fees.find(function(f){return f.studentId===n.studentId && (f.feeType||"School Fees")===n.feeType && f.session===n.session && f.term===n.term;}) || null;
+  }
+  function applyForm(patch){
+    setForm(function(p){
+      var n = {...p,...patch};
+      if(!n.amountTouched){ var sug = suggestBill(n); if(sug) n.amount = sug; }
+      return n;
+    });
+  }
+  function setPayForKind(k){
+    if(k==="current") return applyForm({payFor:k,session:getCurrentSession(),term:getCurrentTerm()});
+    var opts = ALL_PERIODS.filter(function(x){return k==="arrears"?x.idx<curIdx:x.idx>curIdx;});
+    var pick = k==="arrears" ? opts[opts.length-1] : opts[0];
+    applyForm({payFor:k,session:pick?pick.session:form.session,term:pick?pick.term:form.term});
+  }
+  function studentArrears(stuId){
+    return fees.filter(function(f){return f.studentId===stuId && termIdx(f.session,f.term)<curIdx && (f.amount||0)-(f.amountPaid||0)>0;})
+      .sort(function(a,b){return termIdx(a.session,a.term)-termIdx(b.session,b.term);});
+  }
+
+  // Adds one installment to an existing record; returns false if cancelled.
+  function addInstallment(f, amt, date, time){
     var bal = (f.amount||0)-(f.amountPaid||0);
-    if(amt>bal && !window.confirm("₦"+amt.toLocaleString()+" is more than the outstanding balance of ₦"+Math.max(0,bal).toLocaleString()+". Record it anyway?")) return;
+    if(amt>bal && !window.confirm("₦"+amt.toLocaleString()+" is more than the outstanding balance of ₦"+Math.max(0,bal).toLocaleString()+" on "+f.receipt+". Record it anyway?")) return false;
     var prior = getPayments(f);
-    var pay = {id:genId(),amount:amt,date:payForm.date,time:payForm.time||"",receipt:f.receipt+"-"+(prior.length+1),recordedBy:userName(),recordedAt:new Date().toISOString()};
+    var pay = {id:genId(),amount:amt,date:date,time:time||"",receipt:f.receipt+"-"+(prior.length+1),recordedBy:userName(),recordedAt:new Date().toISOString(),
+      kind:kindFor(f.session,f.term),paidInSession:getCurrentSession(),paidInTerm:getCurrentTerm()};
     var updated = withPayments(f, prior.concat([pay]));
     setFees(function(p){return p.map(function(x){return x.id===f.id?updated:x;});});
     var stu = students.find(function(s){return s.id===f.studentId;});
     if(stu&&stu.parentPhone){
       sendSMS(stu.parentPhone, SMS_TEMPLATES.feeReceipt(stu.firstname+" "+stu.surname, amt, Math.max(0,updated.amount-updated.amountPaid)), updated.status==="Paid"?"Fee Receipt":"Part Payment Receipt");
     }
-    setPayFor(null);
     setShowReceipt({...updated, receipt:pay.receipt, thisPayment:pay, student:stu});
+    return true;
+  }
+  function saveAddPayment(){
+    var f = fees.find(function(x){return x.id===payFor;});
+    if(!f) return setPayFor(null);
+    var amt = parseInt(payForm.amount)||0;
+    if(amt<=0) return alert("Enter the amount paid.");
+    if(!payForm.date) return alert("Enter the payment date.");
+    if(addInstallment(f, amt, payForm.date, payForm.time)) setPayFor(null);
   }
 
   function openEditFee(f){
@@ -2556,17 +2613,31 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,chartOfAcc
     setEditFee(null);
   }
 
+  function resetFeeForm(){
+    setForm(function(p){return {...p, studentId:"", amountPaid:0, datePaid:today(), payFor:"current", session:getCurrentSession(), term:getCurrentTerm(), amountTouched:false};});
+  }
   function saveFee(){
     if(!form.studentId) return alert("Please select a class and student.");
+    var ex = findExisting(form);
+    if(ex){
+      // Same student + fee type + term already has a record: add to it instead of duplicating
+      var exAmt = parseInt(form.amountPaid)||0;
+      if(exAmt<=0) return alert("Enter the amount paid.");
+      if(addInstallment(ex, exAmt, form.datePaid, nowTime())){ setShowForm(false); resetFeeForm(); }
+      return;
+    }
     if(!form.amount) return alert("Please enter the fee amount.");
     var paid = parseInt(form.amountPaid)||0;
     var total = parseInt(form.amount)||0;
     var status = paid===0?"Unpaid":paid>=total?"Paid":"Part-Payment";
     var rcpt = genReceiptNo();
     var stu = students.find(function(s){return s.id===form.studentId;});
+    var kind = kindFor(form.session, form.term);
     var rec = {...form, id:genId(), amountPaid:paid, amount:total, status:status, receipt:rcpt,
       studentName:stu?(stu.surname+" "+stu.firstname):"", paid:paid,
-      payments: paid>0 ? [{id:genId(),amount:paid,date:form.datePaid,time:nowTime(),receipt:rcpt+"-1",recordedBy:userName(),recordedAt:new Date().toISOString()}] : []};
+      paymentFor:kind, paidInSession:getCurrentSession(), paidInTerm:getCurrentTerm(),
+      payments: paid>0 ? [{id:genId(),amount:paid,date:form.datePaid,time:nowTime(),receipt:rcpt+"-1",recordedBy:userName(),recordedAt:new Date().toISOString(),kind:kind,paidInSession:getCurrentSession(),paidInTerm:getCurrentTerm()}] : []};
+    delete rec.payFor; delete rec.amountTouched;
     setFees(function(p){return [...p, rec];});
 
     // Auto SMS
@@ -2582,7 +2653,7 @@ function FeesModule({students,fees,setFees,expenditure,setExpenditure,chartOfAcc
     // Show receipt
     setShowReceipt({...rec, student:stu});
     setShowForm(false);
-    setForm(function(p){return {...p, studentId:"", amountPaid:0, datePaid:today()};});
+    resetFeeForm();
   }
 
   function saveExpenditure(){
@@ -2855,7 +2926,12 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                   </select>
                 ) : null}
               </div>
-              <div style={{display:"flex",gap:8}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <select style={S.select} value={fKind} onChange={function(e){setFKind(e.target.value);}} title="Show records for this term, or advance/arrears money received during this term">
+                  <option value="">Fees for this term</option>
+                  <option value="advance">Advance received this term</option>
+                  <option value="arrears">Arrears received this term</option>
+                </select>
                 <button onClick={function(){setShowForm(true);}} style={S.btn()}>+ Record Payment</button>
                 <button onClick={sendWeeklyReminders} style={S.btn("secondary")}>📱 Send Reminders</button>
               </div>
@@ -2912,7 +2988,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                         <td style={S.tdC}>₦{(f.amount||0).toLocaleString()}</td>
                         <td style={{...S.tdC,color:C.success,fontWeight:700}}>₦{(f.amountPaid||0).toLocaleString()}</td>
                         <td style={{...S.tdC,color:bal>0?C.danger:C.success,fontWeight:700}}>₦{bal.toLocaleString()}</td>
-                        <td style={S.td}><span style={S.badge(f.status==="Paid"?"green":f.status==="Part-Payment"?"yellow":"red")}>{f.status}</span></td>
+                        <td style={S.td}><span style={S.badge(f.status==="Paid"?"green":f.status==="Part-Payment"?"yellow":"red")}>{f.status}</span>{recordKind(f) ? <div style={{marginTop:3}}><span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:8,background:recordKind(f)==="advance"?"#DBEAFE":"#FFEDD5",color:recordKind(f)==="advance"?"#1E40AF":"#9A3412"}}>{recordKind(f)==="advance"?"ADVANCE":"ARREARS"}{fKind ? " · "+f.term+" "+f.session : ""}</span></div> : null}</td>
                         <td style={{...S.td,fontSize:10}}>{formatDate(f.datePaid||"")}</td>
                         <td style={S.td}>
                           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
@@ -2936,28 +3012,36 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
           {showForm ? (
             <Modal open={showForm} onClose={function(){setShowForm(false);}} title="Record Fee Payment">
               <div style={S.grid2}>
-                <div style={S.formGroup}>
-                  <label style={S.label}>Session</label>
-                  <select style={{...S.select,width:"100%"}} value={form.session} onChange={function(e){setForm(function(p){return{...p,session:e.target.value};});}}>
-                    {SESSIONS.map(function(s){return <option key={s}>{s}</option>;})}
-                  </select>
+                <div style={{...S.formGroup,gridColumn:"1/-1"}}>
+                  <label style={S.label}>Payment For</label>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {[["current","This Term"],["arrears","⏪ Arrears (past term)"],["advance","⏩ Advance (future term)"]].map(function(k){
+                      return <button key={k[0]} type="button" onClick={function(){setPayForKind(k[0]);}} style={{...S.btn((form.payFor||"current")===k[0]?"primary":"secondary"),fontSize:11}}>{k[1]}</button>;
+                    })}
+                  </div>
                 </div>
-                <div style={S.formGroup}>
-                  <label style={S.label}>Term</label>
-                  <select style={{...S.select,width:"100%"}} value={form.term} onChange={function(e){setForm(function(p){return{...p,term:e.target.value};});}}>
-                    {TERMS.map(function(t){return <option key={t}>{t}</option>;})}
-                  </select>
-                </div>
+                {(form.payFor||"current")==="current" ? (
+                  <div style={{...S.formGroup,gridColumn:"1/-1",fontSize:12}}>Paying for <b>{getCurrentTerm()} {getCurrentSession()}</b> (current term)</div>
+                ) : (
+                  <div style={{...S.formGroup,gridColumn:"1/-1"}}>
+                    <label style={S.label}>{form.payFor==="arrears"?"Term & session being cleared *":"Term & session being paid in advance *"}</label>
+                    <select style={{...S.select,width:"100%"}} value={form.session+"|"+form.term} onChange={function(e){var v=e.target.value.split("|"); applyForm({session:v[0],term:v[1]});}}>
+                      {ALL_PERIODS.filter(function(x){return form.payFor==="arrears"?x.idx<curIdx:x.idx>curIdx;}).sort(function(a,b){return form.payFor==="arrears"?b.idx-a.idx:a.idx-b.idx;}).map(function(x){
+                        return <option key={x.session+x.term} value={x.session+"|"+x.term}>{x.term} {x.session}</option>;
+                      })}
+                    </select>
+                  </div>
+                )}
                 <div style={S.formGroup}>
                   <label style={S.label}>Class *</label>
-                  <select style={{...S.select,width:"100%"}} value={form.class} onChange={function(e){setForm(function(p){return{...p,class:e.target.value,studentId:""};});}}>
+                  <select style={{...S.select,width:"100%"}} value={form.class} onChange={function(e){applyForm({class:e.target.value,studentId:""});}}>
                     <option value="">— Select Class —</option>
                     {allClasses.map(function(c){return <option key={c}>{c}</option>;})}
                   </select>
                 </div>
                 <div style={S.formGroup}>
                   <label style={S.label}>Student Name *</label>
-                  <select style={{...S.select,width:"100%"}} value={form.studentId} onChange={function(e){setForm(function(p){return{...p,studentId:e.target.value};});}}>
+                  <select style={{...S.select,width:"100%"}} value={form.studentId} onChange={function(e){applyForm({studentId:e.target.value});}}>
                     <option value="">— Select Student —</option>
                     {classStudentsForForm.map(function(s){
                       return <option key={s.id} value={s.id}>{s.surname} {s.firstname}</option>;
@@ -2966,7 +3050,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                 </div>
                 <div style={S.formGroup}>
                   <label style={S.label}>Fee Type</label>
-                  <select style={{...S.select,width:"100%"}} value={form.feeType} onChange={function(e){setForm(function(p){return{...p,feeType:e.target.value};});}}>
+                  <select style={{...S.select,width:"100%"}} value={form.feeType} onChange={function(e){applyForm({feeType:e.target.value});}}>
                     {FEE_TYPES.map(function(t){return <option key={t}>{t}</option>;})}
                   </select>
                 </div>
@@ -2976,14 +3060,43 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                 </div>
                 <div style={S.formGroup}>
                   <label style={S.label}>Amount Billed (₦)</label>
-                  <input type="number" style={S.input} value={form.amount} onChange={function(e){setForm(function(p){return{...p,amount:e.target.value};});}} placeholder="e.g. 15000"/>
+                  {findExisting(form) ? (
+                    <div style={{...S.input,background:"#F9FAFB",fontWeight:700}}>₦{(findExisting(form).amount||0).toLocaleString()}</div>
+                  ) : (
+                    <input type="number" style={S.input} value={form.amount} onChange={function(e){var v=e.target.value; setForm(function(p){return{...p,amount:v,amountTouched:true};});}} placeholder="e.g. 15000"/>
+                  )}
+                  {!findExisting(form)&&!form.amountTouched&&suggestBill(form) ? <div style={{fontSize:10,color:C.textMuted,marginTop:2}}>Auto-filled from {form.class} {form.feeType} records</div> : null}
                 </div>
                 <div style={S.formGroup}>
                   <label style={S.label}>Amount Paid (₦)</label>
                   <input type="number" style={S.input} value={form.amountPaid} onChange={function(e){setForm(function(p){return{...p,amountPaid:e.target.value};});}} placeholder="e.g. 15000"/>
                 </div>
               </div>
-              {form.amount&&form.amountPaid ? (
+              {form.studentId&&(form.payFor||"current")!=="arrears"&&studentArrears(form.studentId).length ? (function(){
+                var arr = studentArrears(form.studentId);
+                var tot = arr.reduce(function(a,f){return a+(f.amount||0)-(f.amountPaid||0);},0);
+                return (
+                  <div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:6,padding:"8px 12px",marginBottom:12,fontSize:11}}>
+                    <b>⚠️ This student owes ₦{tot.toLocaleString()} from past terms:</b>
+                    {arr.map(function(f){return (
+                      <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,marginTop:4}}>
+                        <span>{f.feeType||"School Fees"} · {f.term} {f.session} — ₦{((f.amount||0)-(f.amountPaid||0)).toLocaleString()}</span>
+                        <button type="button" style={{...S.btn("secondary"),fontSize:10,padding:"2px 8px"}} onClick={function(){applyForm({payFor:"arrears",session:f.session,term:f.term,feeType:f.feeType||"School Fees",amountPaid:(f.amount||0)-(f.amountPaid||0)});}}>Pay this</button>
+                      </div>
+                    );})}
+                  </div>
+                );
+              })() : null}
+              {findExisting(form) ? (function(){
+                var ex = findExisting(form); var exBal = (ex.amount||0)-(ex.amountPaid||0); var now = parseInt(form.amountPaid)||0;
+                return (
+                  <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:6,padding:"8px 12px",marginBottom:12,fontSize:12}}>
+                    Existing record <b>{ex.receipt}</b> for {ex.feeType||"School Fees"} {ex.term} {ex.session}: billed ₦{(ex.amount||0).toLocaleString()}, paid ₦{(ex.amountPaid||0).toLocaleString()}, balance <b>₦{Math.max(0,exBal).toLocaleString()}</b>.
+                    {" "}This payment will be added to it → new balance <b style={{color:exBal-now>0?C.danger:C.success}}>₦{Math.max(0,exBal-now).toLocaleString()}</b>.
+                  </div>
+                );
+              })() : null}
+              {!findExisting(form)&&form.amount&&form.amountPaid ? (
                 <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:6,padding:"8px 12px",marginBottom:12,fontSize:12}}>
                   <b>Balance:</b> ₦{Math.max(0,(parseInt(form.amount)||0)-(parseInt(form.amountPaid)||0)).toLocaleString()}
                   {" "}<span style={S.badge((parseInt(form.amountPaid)||0)>=(parseInt(form.amount)||0)?"green":(parseInt(form.amountPaid)||0)>0?"yellow":"red")}>
@@ -3082,6 +3195,7 @@ ${bal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6
                   <div style={S.formGroup}><label style={S.label}>Class</label><select style={{...S.select,width:"100%"}} value={e.class} onChange={function(ev){var v=ev.target.value; setEditFee(function(p){return {...p,class:v,studentId:""};});}}><option value="">— Select Class —</option>{allClasses.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
                   <div style={S.formGroup}><label style={S.label}>Student *</label><select style={{...S.select,width:"100%"}} value={e.studentId} onChange={function(ev){setE("studentId",ev.target.value);}}><option value="">— Select Student —</option>{clsStudents.map(function(s){return <option key={s.id} value={s.id}>{s.surname} {s.firstname}</option>;})}</select></div>
                   <div style={S.formGroup}><label style={S.label}>Fee Type</label><select style={{...S.select,width:"100%"}} value={e.feeType||"School Fees"} onChange={function(ev){setE("feeType",ev.target.value);}}>{FEE_TYPES.map(function(t){return <option key={t}>{t}</option>;})}</select></div>
+                  <div style={S.formGroup}><label style={S.label}>Payment For</label><select style={{...S.select,width:"100%"}} value={e.paymentFor==="advance"||e.paymentFor==="arrears"?e.paymentFor:"current"} onChange={function(ev){setE("paymentFor",ev.target.value);}}><option value="current">Current term</option><option value="arrears">Arrears (past term)</option><option value="advance">Advance (future term)</option></select><div style={{fontSize:10,color:C.textMuted,marginTop:2}}>Based on the session/term: {kindFor(e.session,e.term)==="current"?"current term":kindFor(e.session,e.term)}</div></div>
                   <div style={S.formGroup}><label style={S.label}>Amount Billed (₦) *</label><input type="number" style={S.input} value={e.amount} onChange={function(ev){setE("amount",ev.target.value);}}/></div>
                 </div>
                 <div style={{fontSize:12,fontWeight:700,margin:"6px 0"}}>Payments</div>
